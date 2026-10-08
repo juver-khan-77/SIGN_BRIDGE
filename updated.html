@@ -1,0 +1,1592 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<!-- SIGN BRIDGE — FROM GESTURES TO COMMUNICATION · v3 (NeuralFace theme, English) -->
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#05070a">
+<title>SignBridge — Real-Time Sign Lang Analysis</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700;900&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #05070a;
+  --bg-alt: #0a0f0d;
+  --grey-dark: #1a1f1c;
+  --grey: #3a423d;
+  --grey-light: #8a958e;
+  --white: #eef4ef;
+  --green: #39ff8f;
+  --green-dim: #1c7a49;
+  --green-glow: rgba(57, 255, 143, 0.55);
+  --red-alert: #ff4d5e;
+  --amber: #ffcf4d;
+  --font-display: 'Orbitron', sans-serif;
+  --font-mono: 'Share Tech Mono', monospace;
+}
+ 
+* { box-sizing: border-box; }
+ 
+html, body {
+  margin: 0;
+  padding: 0;
+  background: var(--bg);
+  color: var(--white);
+  font-family: var(--font-mono);
+  min-height: 100vh;
+  overflow-x: hidden;
+}
+ 
+.grid-bg {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  background-image:
+    linear-gradient(rgba(57,255,143,0.05) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(57,255,143,0.05) 1px, transparent 1px);
+  background-size: 34px 34px;
+  pointer-events: none;
+}
+ 
+.scanlines {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  pointer-events: none;
+  background: repeating-linear-gradient(
+    to bottom,
+    rgba(0,0,0,0) 0px,
+    rgba(0,0,0,0) 2px,
+    rgba(57,255,143,0.025) 3px,
+    rgba(0,0,0,0) 4px
+  );
+  mix-blend-mode: overlay;
+  opacity: 0.6;
+}
+ 
+/* Topbar */
+.topbar {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 18px 32px;
+  border-bottom: 1px solid var(--grey-dark);
+  background: linear-gradient(180deg, rgba(10,15,13,0.9), rgba(5,7,10,0.4));
+}
+ 
+.logo {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-family: var(--font-display);
+  font-size: 30px;
+  font-weight: 900;
+  letter-spacing: 2px;
+}
+.logo-mark {
+  color: var(--green);
+  text-shadow: 0 0 12px var(--green-glow);
+  animation: pulseGlow 2.4s ease-in-out infinite;
+}
+.logo-text .accent { color: var(--green); text-shadow: 0 0 10px var(--green-glow); }
+ 
+.status-cluster { display: flex; gap: 12px; }
+.status-pill {
+  border: 1px solid var(--grey);
+  padding: 6px 14px;
+  border-radius: 3px;
+  font-size: 11px;
+  letter-spacing: 1px;
+  color: var(--grey-light);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(255,255,255,0.02);
+}
+.status-pill b { color: var(--green); font-weight: 700; }
+.status-pill .dot {
+  width: 7px; height: 7px; border-radius: 50%;
+  background: var(--green);
+  box-shadow: 0 0 8px var(--green-glow);
+  animation: pulseGlow 1.6s ease-in-out infinite;
+}
+ 
+@keyframes pulseGlow {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.45; }
+}
+ 
+/* Layout */
+.layout {
+  position: relative;
+  z-index: 2;
+  display: grid;
+  grid-template-columns: 1.6fr 1fr;
+  gap: 22px;
+  padding: 24px 32px;
+  max-width: 1400px;
+  margin: 0 auto;
+}
+@media (max-width: 980px) {
+  .layout { grid-template-columns: 1fr; }
+}
+ 
+/* Stage */
+.stage-frame {
+  position: relative;
+  border: 1px solid var(--grey);
+  border-radius: 6px;
+  overflow: hidden;
+  aspect-ratio: 4 / 3;
+  background: #000;
+  box-shadow: 0 0 40px rgba(57,255,143,0.06), inset 0 0 60px rgba(0,0,0,0.6);
+}
+ 
+#video, #overlay, #fxCanvas {
+  position: absolute;
+  top: 0; left: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transform: scaleX(-1);
+}
+#video { filter: grayscale(0.25) contrast(1.05) brightness(0.9); }
+ 
+.frame-corner {
+  position: absolute;
+  width: 26px; height: 26px;
+  border: 2px solid var(--green);
+  opacity: 0.8;
+  z-index: 3;
+  filter: drop-shadow(0 0 6px var(--green-glow));
+}
+.frame-corner.tl { top: 10px; left: 10px; border-right: none; border-bottom: none; }
+.frame-corner.tr { top: 10px; right: 10px; border-left: none; border-bottom: none; }
+.frame-corner.bl { bottom: 10px; left: 10px; border-right: none; border-top: none; }
+.frame-corner.br { bottom: 10px; right: 10px; border-left: none; border-top: none; }
+ 
+.rec-tag {
+  position: absolute;
+  top: 14px; left: 50%;
+  transform: translateX(-50%);
+  z-index: 3;
+  font-family: var(--font-display);
+  font-size: 11px;
+  letter-spacing: 2px;
+  color: var(--white);
+  background: rgba(0,0,0,0.5);
+  padding: 4px 10px;
+  border: 1px solid var(--grey);
+  border-radius: 20px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.rec-dot {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: var(--red-alert);
+  box-shadow: 0 0 6px var(--red-alert);
+  animation: pulseGlow 1s ease-in-out infinite;
+}
+ 
+.target-reticle {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+}
+ 
+.no-cam-msg {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 18px;
+  background: rgba(5,7,10,0.9);
+  text-align: center;
+}
+.no-cam-msg p {
+  font-family: var(--font-display);
+  letter-spacing: 2px;
+  color: var(--grey-light);
+  font-size: 13px;
+}
+.no-cam-msg.hidden { display: none; }
+ 
+.btn-primary {
+  font-family: var(--font-display);
+  background: transparent;
+  border: 1px solid var(--green);
+  color: var(--green);
+  padding: 12px 26px;
+  letter-spacing: 2px;
+  font-size: 13px;
+  cursor: pointer;
+  border-radius: 3px;
+  transition: all 0.2s ease;
+  text-shadow: 0 0 8px var(--green-glow);
+}
+.btn-primary:hover {
+  background: var(--green);
+  color: #000;
+  box-shadow: 0 0 24px var(--green-glow);
+}
+ 
+.controls-row {
+  display: flex;
+  gap: 10px;
+  margin-top: 14px;
+  flex-wrap: wrap;
+}
+.btn-ghost {
+  font-family: var(--font-mono);
+  background: rgba(255,255,255,0.02);
+  border: 1px solid var(--grey);
+  color: var(--grey-light);
+  padding: 8px 14px;
+  font-size: 11px;
+  letter-spacing: 1px;
+  cursor: pointer;
+  border-radius: 3px;
+  transition: all 0.15s ease;
+}
+.btn-ghost:hover { border-color: var(--green); color: var(--white); }
+.btn-ghost.active { border-color: var(--green); color: var(--green); box-shadow: 0 0 10px rgba(57,255,143,0.15) inset; }
+.btn-ghost.danger:hover { border-color: var(--red-alert); color: var(--red-alert); }
+ 
+/* Data panel */
+.data-panel { display: flex; flex-direction: column; gap: 16px; }
+ 
+.card {
+  border: 1px solid var(--grey-dark);
+  background: linear-gradient(160deg, rgba(255,255,255,0.02), rgba(0,0,0,0.2));
+  border-radius: 6px;
+  padding: 16px 18px;
+}
+.card-label {
+  font-family: var(--font-display);
+  font-size: 11px;
+  letter-spacing: 2px;
+  color: var(--grey-light);
+  margin-bottom: 12px;
+  border-bottom: 1px solid var(--grey-dark);
+  padding-bottom: 8px;
+}
+ 
+.primary-emotion { text-align: center; }
+.emotion-readout {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  margin: 10px 0 14px;
+}
+.emotion-icon {
+  font-size: 34px;
+  color: var(--green);
+  text-shadow: 0 0 18px var(--green-glow);
+}
+.emotion-label {
+  font-family: var(--font-display);
+  font-size: 26px;
+  font-weight: 900;
+  letter-spacing: 3px;
+  color: var(--white);
+  text-shadow: 0 0 14px var(--green-glow);
+}
+.confidence-bar-wrap {
+  height: 8px;
+  border: 1px solid var(--grey);
+  border-radius: 4px;
+  overflow: hidden;
+  background: rgba(255,255,255,0.03);
+}
+.confidence-bar {
+  height: 100%;
+  width: 0%;
+  background: linear-gradient(90deg, var(--green-dim), var(--green));
+  box-shadow: 0 0 10px var(--green-glow);
+  transition: width 0.25s ease;
+}
+.confidence-text {
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--grey-light);
+  letter-spacing: 1px;
+}
+.confidence-text b, .confidence-text span { color: var(--green); }
+ 
+.spectrum { display: flex; flex-direction: column; gap: 10px; }
+.spectrum-row { display: grid; grid-template-columns: 90px 1fr 40px; align-items: center; gap: 10px; font-size: 11px; }
+.spectrum-name { color: var(--grey-light); letter-spacing: 1px; }
+.spectrum-track { height: 6px; background: rgba(255,255,255,0.04); border-radius: 3px; overflow: hidden; border: 1px solid var(--grey-dark); }
+.spectrum-fill { height: 100%; background: var(--green); box-shadow: 0 0 6px var(--green-glow); transition: width 0.2s ease; }
+.spectrum-val { text-align: right; color: var(--green); }
+ 
+.metrics-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.metric-box { border: 1px solid var(--grey-dark); border-radius: 4px; padding: 8px 10px; }
+.metric-box .m-label { font-size: 10px; color: var(--grey-light); letter-spacing: 1px; }
+.metric-box .m-value { font-size: 15px; color: var(--white); font-family: var(--font-display); margin-top: 4px; }
+.metric-box .m-value.hot { color: var(--green); text-shadow: 0 0 8px var(--green-glow); }
+ 
+.log-feed { display: flex; flex-direction: column; gap: 6px; max-height: 150px; overflow-y: auto; font-size: 11px; }
+.log-feed::-webkit-scrollbar { width: 4px; }
+.log-feed::-webkit-scrollbar-thumb { background: var(--grey); }
+.log-entry { color: var(--grey-light); border-left: 2px solid var(--green-dim); padding-left: 8px; }
+.log-entry .t { color: var(--green); margin-right: 6px; }
+ 
+.footbar {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  justify-content: center;
+  gap: 10px;
+  padding: 16px;
+  font-size: 10px;
+  letter-spacing: 1px;
+  color: var(--grey);
+  border-top: 1px solid var(--grey-dark);
+}
+.footbar .sep { color: var(--grey-dark); }
+/* ===== SignBridge additions (built on NeuralFace theme above) ===== */
+.hidden{display:none!important}
+.view{position:relative;z-index:2}
+.logo-img{display:none;height:40px;width:auto;max-width:90px;object-fit:contain}
+.mini-btn{font-family:var(--font-mono);font-size:11px;letter-spacing:1px;padding:8px 14px;border:1px solid var(--grey);background:rgba(255,255,255,.02);color:var(--grey-light);border-radius:3px;cursor:pointer}
+.mini-btn:hover{border-color:var(--green);color:var(--green)}
+.status-pill b.live{color:var(--green)}
+ 
+/* ---- camera view: full screen ---- */
+#cameraView{min-height:100dvh;display:flex;flex-direction:column}
+#cameraView .topbar{padding:12px 20px}
+#cameraView .layout{max-width:none;margin:0;width:100%;grid-template-columns:minmax(0,1fr) 410px;gap:16px;padding:14px 20px;flex:1}
+#cameraView .stage-frame{aspect-ratio:auto;width:100%;height:calc(100dvh - 142px);min-height:380px}
+#cameraView .stage-panel{min-width:0}
+#cameraView .data-panel{max-height:calc(100dvh - 86px);overflow-y:auto;padding-right:2px}
+#cameraView .data-panel::-webkit-scrollbar{width:4px}#cameraView .data-panel::-webkit-scrollbar-thumb{background:var(--grey)}
+#fxCanvas{position:absolute;top:0;left:0;width:100%;height:100%;object-fit:cover;transform:scaleX(-1)}
+.vignette{position:absolute;inset:0;pointer-events:none;z-index:2;box-shadow:inset 0 0 110px 24px rgba(0,0,0,.55)}
+.cam-hint{position:absolute;left:0;right:0;top:44%;text-align:center;z-index:4;pointer-events:none;font-family:var(--font-display);font-size:12px;letter-spacing:3px;color:var(--grey-light);padding:0 20px;text-transform:uppercase}
+.hud{position:absolute;left:0;right:0;bottom:0;z-index:4;padding:50px 18px 18px;text-align:center;background:linear-gradient(0deg,rgba(5,7,10,.95),rgba(5,7,10,.55) 62%,transparent)}
+.hud-label{font-family:var(--font-display);font-size:10px;letter-spacing:3px;color:var(--grey-light)}
+#gesture{font-family:var(--font-display);font-weight:900;font-size:clamp(24px,5vw,46px);letter-spacing:3px;color:var(--white);margin:8px 0 4px;min-height:1.25em;line-height:1.2;text-shadow:0 0 18px var(--green-glow);word-break:break-word}
+#pattern{font-size:15px;color:var(--grey-light);letter-spacing:6px}
+.lock-wrap{height:6px;max-width:340px;margin:10px auto 0;border:1px solid var(--grey);border-radius:4px;overflow:hidden;background:rgba(255,255,255,.03)}
+.lock-bar{height:100%;width:0;background:linear-gradient(90deg,var(--green-dim),var(--green));box-shadow:0 0 10px var(--green-glow);transition:width .12s linear}
+.hud-voice{position:absolute;right:14px;top:14px;z-index:4;display:flex;align-items:center;gap:7px;font-size:10.5px;letter-spacing:1px;color:var(--grey-light);padding:4px 10px;background:rgba(0,0,0,.5);border:1px solid var(--grey);border-radius:20px}
+.voice-dot{width:7px;height:7px;border-radius:50%;background:var(--grey)}
+.voice-dot.speaking{background:var(--green);box-shadow:0 0 8px var(--green-glow);animation:pulseGlow 1s infinite}
+.controls-row .btn-ghost{flex:1 1 auto}
+.btn-ghost.on{border-color:var(--green);color:var(--green);box-shadow:0 0 10px rgba(57,255,143,.15) inset}
+.sub-label{font-size:10px;letter-spacing:2px;color:var(--grey);margin:14px 0 8px}
+.fingers{display:grid;grid-template-columns:repeat(5,1fr);gap:6px}
+.face-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
+.finger{border:1px solid var(--grey-dark);border-radius:4px;padding:8px 2px;text-align:center;transition:.15s}
+.finger.open{border-color:var(--green-dim);background:rgba(57,255,143,.07)}
+.finger-name{font-size:9px;color:var(--grey-light);letter-spacing:1px}
+.finger-value{font-family:var(--font-display);font-size:16px;margin-top:4px}
+.finger.open .finger-value{color:var(--green);text-shadow:0 0 8px var(--green-glow)}
+#toneStyle{font-family:var(--font-display);font-weight:900;font-size:20px;letter-spacing:3px;text-align:center;margin:0 0 10px;color:var(--amber);text-shadow:0 0 12px rgba(255,207,77,.4)}
+.search{width:100%;padding:9px 10px;margin-bottom:8px;background:rgba(255,255,255,.02);border:1px solid var(--grey);color:var(--white);font-family:var(--font-mono);font-size:12px;border-radius:3px;outline:none}
+.search:focus{border-color:var(--green)}
+.gest-wrap{max-height:320px;overflow-y:auto}
+.gest-table{width:100%;border-collapse:collapse;font-size:11.5px}
+.gest-table td{padding:6px 4px;border-bottom:1px solid var(--grey-dark);color:var(--grey-light)}
+.gest-table td:first-child{color:var(--green);letter-spacing:1.5px;width:96px;white-space:nowrap}
+.gest-table td:last-child{color:var(--white);text-align:right}
+.mini-note{color:var(--grey);font-size:10.5px;text-align:center;margin-top:10px;line-height:1.6}
+#cameraView .footbar{flex-wrap:wrap;text-align:center}
+@media(max-width:980px){
+  #cameraView .layout{grid-template-columns:1fr;padding:10px}
+  #cameraView .stage-frame{height:calc(100dvh - 140px);min-height:340px}
+  #cameraView .data-panel{max-height:none;overflow:visible}
+  .status-pill.fps{display:none}
+  .logo{font-size:15px}.topbar{padding:12px 14px}
+}
+ 
+/* ================= HOME (Vercel × Stick inspired) ================= */
+#homeView{overflow:hidden}
+.glow{position:absolute;left:50%;top:-220px;width:1100px;height:700px;transform:translateX(-50%);background:radial-gradient(ellipse at center,rgba(57,255,143,.20),rgba(57,255,143,.05) 45%,transparent 70%);pointer-events:none;z-index:0}
+.nav{position:sticky;top:0;z-index:20;display:flex;align-items:center;justify-content:space-between;padding:14px 32px;background:rgba(5,7,10,.72);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);border-bottom:1px solid var(--grey-dark)}
+.nav-links{display:flex;gap:26px;font-size:20px;letter-spacing:1.5px}
+.nav-links a{color:var(--grey-light);text-decoration:none;transition:.15s}.nav-links a:hover{color:var(--green)}
+.nav .btn-primary{padding:9px 18px;font-size:20px}
+.hero{position:relative;z-index:1;text-align:center;padding:84px 20px 36px;max-width:1100px;margin:0 auto}
+.badge{display:inline-flex;align-items:center;gap:9px;font-size:11px;letter-spacing:1.5px;color:var(--grey-light);padding:7px 16px;border:1px solid var(--grey);border-radius:40px;background:rgba(255,255,255,.03)}
+.badge i{width:7px;height:7px;border-radius:50%;background:var(--green);box-shadow:0 0 10px var(--green-glow);animation:pulseGlow 1.6s infinite}
+.hero h1{font-family:var(--font-display);font-weight:900;font-size:clamp(34px,8.2vw,112px);line-height:.98;letter-spacing:-2px;margin:28px 0 22px;display:flex;flex-wrap:wrap;justify-content:center;gap:0 .28em}
+.hero h1 span{color:#2a322d;-webkit-text-stroke:1px #3a423d;animation:wordLit 6s infinite}
+.hero h1 span:nth-child(2){animation-delay:2s}.hero h1 span:nth-child(3){animation-delay:4s}
+@keyframes wordLit{0%,28%{color:var(--green);-webkit-text-stroke:0;text-shadow:0 0 40px var(--green-glow)}34%,100%{color:#2a322d;-webkit-text-stroke:1px #3a423d;text-shadow:none}}
+.hero p{max-width:600px;margin:0 auto;color:var(--grey-light);font-size:15px;line-height:1.75}
+.cta-row{display:flex;gap:12px;justify-content:center;flex-wrap:wrap;margin-top:34px}
+.cta-row .btn-primary{padding:15px 34px;font-size:14px;background:var(--green);color:#03120a;text-shadow:none;box-shadow:0 0 34px var(--green-glow)}
+.cta-row .btn-primary:hover{background:var(--white);box-shadow:0 0 44px var(--green-glow)}
+.cta-ghost{font-family:var(--font-display);letter-spacing:2px;font-size:13px;padding:15px 28px;border:1px solid var(--grey);color:var(--white);background:transparent;border-radius:3px;cursor:pointer;text-decoration:none;transition:.15s}
+.cta-ghost:hover{border-color:var(--green);color:var(--green)}
+.demo{position:relative;z-index:1;max-width:880px;margin:30px auto 0;padding:0 20px}
+.demo .stage-frame{aspect-ratio:16/9;box-shadow:0 0 90px rgba(57,255,143,.14),0 30px 80px rgba(0,0,0,.6)}
+.demo svg{position:absolute;inset:0;width:100%;height:100%}
+.demo .tiles{position:absolute;inset:0;background-image:linear-gradient(rgba(57,255,143,.07) 1px,transparent 1px),linear-gradient(90deg,rgba(57,255,143,.07) 1px,transparent 1px);background-size:34px 34px}
+.demo .scan{position:absolute;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,var(--green),transparent);box-shadow:0 0 18px var(--green-glow);animation:scan 3.2s linear infinite;z-index:3}
+@keyframes scan{0%{top:0}100%{top:100%}}
+.demo .hud{padding-top:30px}
+.demo #demoWord{font-size:clamp(22px,4.4vw,40px)}
+.marquee{position:relative;z-index:1;overflow:hidden;margin:64px 0 0;border-top:1px solid var(--grey-dark);border-bottom:1px solid var(--grey-dark);background:rgba(255,255,255,.015);padding:15px 0}
+.marquee-track{display:flex;gap:44px;width:max-content;animation:marq 55s linear infinite;font-family:var(--font-display);font-size:13px;letter-spacing:3px;color:var(--grey-light);white-space:nowrap}
+.marquee-track b{color:var(--green);font-weight:700}
+@keyframes marq{to{transform:translateX(-50%)}}
+.sec{position:relative;z-index:1;max-width:1100px;margin:0 auto;padding:84px 20px 0}
+.sec-tag{font-size:11px;letter-spacing:3px;color:var(--green);margin-bottom:12px}
+.sec h2{font-family:var(--font-display);font-weight:900;font-size:clamp(26px,5vw,46px);letter-spacing:1px;line-height:1.1;margin-bottom:34px}
+.sec h2 em{font-style:normal;color:var(--green);text-shadow:0 0 20px var(--green-glow)}
+.stats{display:grid;grid-template-columns:repeat(4,1fr);border:1px solid var(--grey-dark);border-radius:6px;background:linear-gradient(160deg,rgba(255,255,255,.025),rgba(0,0,0,.2))}
+.stat{padding:26px 16px;text-align:center;border-right:1px solid var(--grey-dark)}.stat:last-child{border-right:0}
+.stat b{display:block;font-family:var(--font-display);font-size:clamp(26px,4.4vw,42px);font-weight:900;color:var(--white);text-shadow:0 0 18px var(--green-glow)}
+.stat span{font-size:10.5px;letter-spacing:2px;color:var(--grey-light)}
+.bento{display:grid;grid-template-columns:repeat(6,1fr);gap:14px}
+.tile{border:1px solid var(--grey-dark);border-radius:8px;padding:26px;background:linear-gradient(160deg,rgba(255,255,255,.03),rgba(0,0,0,.25));position:relative;overflow:hidden;transition:.2s}
+.tile:hover{border-color:var(--green-dim);box-shadow:0 0 30px rgba(57,255,143,.08)}
+.tile.t1{grid-column:span 4}.tile.t2{grid-column:span 2}.tile.t3{grid-column:span 2}.tile.t4{grid-column:span 4}
+.tile .ic{font-size:30px;margin-bottom:16px;filter:drop-shadow(0 0 10px var(--green-glow))}
+.tile h3{font-family:var(--font-display);font-size:16px;letter-spacing:2px;margin-bottom:10px}
+.tile p{color:var(--grey-light);font-size:13px;line-height:1.75}
+.bits{display:flex;gap:6px;margin-top:20px;font-family:var(--font-display);font-size:15px;letter-spacing:6px;color:var(--green);text-shadow:0 0 10px var(--green-glow)}
+.bits em{font-style:normal;color:var(--grey);letter-spacing:2px}
+.steps{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+.step{border-top:2px solid var(--green);padding:20px 4px 0}
+.step i{font-style:normal;font-family:var(--font-display);font-size:44px;font-weight:900;color:#1d2420;-webkit-text-stroke:1px var(--grey)}
+.step h3{font-family:var(--font-display);font-size:15px;letter-spacing:2px;margin:8px 0}
+.step p{color:var(--grey-light);font-size:13px;line-height:1.75}
+.chips{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
+.chip{border:1px solid var(--grey-dark);border-radius:6px;padding:20px 8px;text-align:center;background:rgba(255,255,255,.02);transition:.2s}
+.chip:hover{border-color:var(--green);transform:translateY(-3px)}
+.chip .e{font-size:30px}.chip .w{font-family:var(--font-display);font-size:11px;letter-spacing:2px;color:var(--grey-light);margin-top:10px}
+.final{margin:90px auto 0;max-width:1100px;padding:0 20px}
+.final-in{text-align:center;padding:64px 20px;border:1px solid var(--grey);border-radius:10px;background:radial-gradient(ellipse at 50% 0%,rgba(57,255,143,.16),transparent 65%),rgba(255,255,255,.02)}
+.final h2{font-family:var(--font-display);font-weight:900;font-size:clamp(26px,5.4vw,52px);margin-bottom:12px}
+.final p{color:var(--grey-light);margin-bottom:28px;font-size:14px}
+#homeView .footbar{margin-top:70px}
+@media(max-width:820px){.nav-links{display:none}.nav{padding:12px 16px}.bento{grid-template-columns:1fr}.tile.t1,.tile.t2,.tile.t3,.tile.t4{grid-column:auto}.steps{grid-template-columns:1fr}.stats{grid-template-columns:repeat(2,1fr)}.stat:nth-child(2){border-right:0}.stat:nth-child(-n+2){border-bottom:1px solid var(--grey-dark)}.chips{grid-template-columns:repeat(2,1fr)}.hero{padding-top:56px}}
+ 
+.card-label,.hud-label,.sub-label{text-transform:uppercase}
+.sub-label{font-family:var(--font-display);color:var(--grey-light);border-bottom:1px solid var(--grey-dark);padding-bottom:8px}
+</style>
+</head>
+<body>
+<div class="scanlines"></div>
+<div class="grid-bg"></div>
+ 
+<!-- ================= HOME ================= -->
+<div class="view" id="homeView">
+  <div class="glow"></div>
+  <nav class="nav">
+    <div class="logo">
+      <img class="logo-img" src="logo.png" alt="" onload="this.style.display='block';var m=this.nextElementSibling;if(m)m.style.display='none'" onerror="this.style.display='none'">
+      <span class="logo-mark">◈</span>
+      <span class="logo-text">SIGN<span class="accent">BRIDGE</span></span>
+    </div>
+    <div class="nav-links"><a href="#features">FEATURES</a><a href="#how">HOW IT WORKS</a><a href="#signs">SIGNS</a></div>
+    <button class="btn-primary" onclick="goToCamera()">▶ START SCAN</button>
+  </nav>
+ 
+  <header class="hero">
+    <span class="badge"><i></i> LIVE · ON-DEVICE · NO VIDEO LEAVES YOUR BROWSER</span>
+    <h1><span>SEE.</span><span>SIGN.</span><span>SPEAK.</span></h1>
+    <p>Point your camera at a hand sign. SignBridge reads both hands and your face in real time — then speaks the sign aloud, in the tone of your expression.</p>
+    <div class="cta-row">
+      <button class="btn-primary" id="startButton" onclick="goToCamera()">▶ ENABLE CAMERA &amp; BEGIN</button>
+      <a class="cta-ghost" href="#signs">EXPLORE SIGNS ↓</a>
+    </div>
+  </header>
+ 
+  <div class="demo">
+    <div class="stage-frame">
+      <div class="tiles"></div>
+      <svg viewBox="0 0 800 450" preserveAspectRatio="xMidYMid slice" fill="none" stroke="#39ff8f">
+        <g stroke-opacity=".9" stroke-width="2.2" stroke-linecap="round">
+          <path d="M560 380 L545 300 M545 300 L500 250 L470 215 L455 190 M545 300 L525 215 L520 160 L518 120 M545 300 L560 210 L566 150 L568 105 M545 300 L595 220 L612 170 L622 135 M545 300 L630 250 L660 215 L676 190 M560 380 L630 250"/>
+        </g>
+        <g fill="#eef4ef" stroke="none"><circle cx="545" cy="300" r="4"/><circle cx="455" cy="190" r="4"/><circle cx="518" cy="120" r="4"/><circle cx="568" cy="105" r="4"/><circle cx="622" cy="135" r="4"/><circle cx="676" cy="190" r="4"/><circle cx="560" cy="380" r="4"/></g>
+        <g stroke-opacity=".22" stroke-width="1"><ellipse cx="250" cy="215" rx="95" ry="125"/><ellipse cx="250" cy="215" rx="70" ry="95"/><path d="M155 215h190M250 90v250M185 150Q250 120 315 150M185 280Q250 310 315 280"/></g>
+        <g stroke-opacity=".9" stroke-width="1.6"><ellipse cx="250" cy="215" rx="95" ry="125"/><path d="M200 190q18-12 36 0M264 190q18-12 36 0M215 275q35 20 70 0"/></g>
+      </svg>
+      <div class="scan"></div>
+      <div class="frame-corner tl"></div><div class="frame-corner tr"></div><div class="frame-corner bl"></div><div class="frame-corner br"></div>
+      <div class="rec-tag"><span class="rec-dot"></span> LIVE</div>
+      <div class="hud"><div class="hud-label">DETECTED SIGN</div><div id="demoWord" style="font-family:var(--font-display);font-weight:900;letter-spacing:3px;color:var(--white);text-shadow:0 0 18px var(--green-glow);margin-top:6px">HELLO</div></div>
+    </div>
+  </div>
+ 
+  <div class="marquee"><div class="marquee-track" id="marquee"></div></div>
+ 
+  <section class="sec">
+    <div class="stats">
+      <div class="stat"><b>32</b><span>SINGLE-HAND SIGNS</span></div>
+      <div class="stat"><b>1024</b><span>TWO-HAND SIGNS</span></div>
+      <div class="stat"><b>468</b><span>FACE LANDMARKS</span></div>
+      <div class="stat"><b>0</b><span>VIDEO UPLOADED</span></div>
+    </div>
+  </section>
+ 
+  <section class="sec" id="features">
+    <div class="sec-tag">// FEATURES</div>
+    <h2>A new language, <em>built for the browser.</em></h2>
+    <div class="bento">
+      <div class="tile t1"><div class="ic">🖐️</div><h3>TWO HANDS, ONE SENTENCE</h3><p>Every finger is read as open or closed. One hand gives a core sign; both hands together unlock a 1024-entry phrase book — from “Good morning” to “Where is the pharmacy?”.</p><div class="bits">11111 <em>+</em> 00000</div></div>
+      <div class="tile t2"><div class="ic">◎</div><h3>FACE SETS THE TONE</h3><p>A 468-point face mesh reads your smile, brows and eyes, and bends the pitch and pace of the voice to match.</p></div>
+      <div class="tile t3"><div class="ic">🔊</div><h3>SPEAKS ALOUD</h3><p>Browser speech synthesis, tuned to work across phones, tablets and desktops.</p></div>
+      <div class="tile t4"><div class="ic">🔒</div><h3>PRIVATE BY DESIGN</h3><p>Everything runs on your device with MediaPipe. No account, no upload — once loaded it keeps working offline.</p></div>
+    </div>
+  </section>
+ 
+  <section class="sec" id="how">
+    <div class="sec-tag">// HOW IT WORKS</div>
+    <h2>Three steps. <em>No setup.</em></h2>
+    <div class="steps">
+      <div class="step"><i>01</i><h3>SHOW</h3><p>Allow the camera and raise one or both hands in frame.</p></div>
+      <div class="step"><i>02</i><h3>READ</h3><p>Finger positions become a 5-bit pattern per hand and match the sign repository.</p></div>
+      <div class="step"><i>03</i><h3>SPEAK</h3><p>The sign is confirmed across frames, then spoken with your expression’s tone.</p></div>
+    </div>
+  </section>
+ 
+  <section class="sec" id="signs">
+    <div class="sec-tag">// SIGN REPOSITORY</div>
+    <h2>A collection of <em>a new language.</em></h2>
+    <div class="chips">
+      <div class="chip"><div class="e">🖐️</div><div class="w">HELLO</div></div>
+      <div class="chip"><div class="e">✊</div><div class="w">STOP</div></div>
+      <div class="chip"><div class="e">✌️</div><div class="w">CLICK PHOTO</div></div>
+      <div class="chip"><div class="e">🙏</div><div class="w">THANK YOU</div></div>
+    </div>
+  </section>
+ 
+  <section class="final"><div class="final-in">
+    <h2>Ready to <span class="accent">sign?</span></h2>
+    <p>Both hands + face read together · works fully on your system</p>
+    <button class="btn-primary" style="width:auto;padding:15px 40px;background:var(--green);color:#03120a;text-shadow:none;box-shadow:0 0 34px var(--green-glow)" onclick="goToCamera()">▶ START SCAN</button>
+  </div></section>
+ 
+  <footer class="footbar"><span>Subjected to Copyright</span><span class="sep">·</span><span>©SignBridge</span><span class="sep">·</span><span>Web + MediaPipe Hands · In-browser</span></footer>
+</div>
+ 
+<!-- ================= CAMERA ================= -->
+<div class="view hidden" id="cameraView">
+  <header class="topbar">
+    <div class="logo">
+      <img class="logo-img" src="logo.png" alt="" onload="this.style.display='block';var m=this.nextElementSibling;if(m)m.style.display='none'" onerror="this.style.display='none'">
+      <span class="logo-mark">◈</span>
+      <span class="logo-text">SIGN<span class="accent">BRIDGE</span></span>
+    </div>
+    <div class="status-cluster">
+      <div class="status-pill" id="engineStatus"><span class="dot"></span> ENGINE: <b id="statusPill">INIT</b></div>
+      <div class="status-pill fps" id="fpsPill">FPS: <b id="fpsVal">--</b></div>
+      <button class="mini-btn" onclick="goHome()">← HOME</button>
+    </div>
+  </header>
+ 
+  <main class="layout">
+    <section class="stage-panel">
+      <div class="stage-frame">
+        <video id="video" autoplay playsinline muted></video>
+        <canvas id="fxCanvas"></canvas>
+        <div class="vignette"></div>
+        <div class="frame-corner tl"></div><div class="frame-corner tr"></div>
+        <div class="frame-corner bl"></div><div class="frame-corner br"></div>
+        <div class="rec-tag"><span class="rec-dot"></span> LIVE</div>
+        <div class="hud-voice"><span class="voice-dot" id="voiceDot"></span><span id="voiceLabel">Voice off</span></div>
+        <div class="cam-hint" id="camHint"></div>
+        <div class="hud">
+          <div class="hud-label" data-i18n="detected"></div>
+          <div id="gesture">—</div>
+          <div id="pattern">-----&nbsp;&nbsp;-----</div>
+          <div class="lock-wrap"><div class="lock-bar" id="lockBar"></div></div>
+        </div>
+      </div>
+      <div class="controls-row">
+        <button class="btn-ghost active" id="toggleMesh" onclick="toggleOpt('mesh',this)">MESH: ON</button>
+        <button class="btn-ghost active" id="toggleContours" onclick="toggleOpt('contours',this)">CONTOURS: ON</button>
+        <button class="btn-ghost" id="togglePoints" onclick="toggleOpt('points',this)">POINTS: OFF</button>
+        <button class="btn-ghost" id="voiceToggle" onclick="toggleVoice()">🔊 VOICE: OFF</button>
+        <button class="btn-ghost danger" id="stopBtn" onclick="goHome()">■ STOP</button>
+      </div>
+    </section>
+ 
+    <aside class="data-panel">
+      <div class="card primary-emotion">
+        <div class="card-label">DOMINANT EXPRESSION</div>
+        <div class="emotion-readout"><span id="emotionIcon" class="emotion-icon">◎</span><span id="emotionLabel" class="emotion-label">STANDBY</span></div>
+        <div class="confidence-bar-wrap"><div class="confidence-bar" id="confidenceBar"></div></div>
+        <div class="confidence-text"><span id="confidenceValue">0</span>% CONFIDENCE</div>
+      </div>
+ 
+      <div class="card">
+        <div class="card-label" data-i18n="leftHand"></div>
+        <div class="fingers">
+          <div class="finger" id="fL-thumb"><div class="finger-name" data-i18n="thumb"></div><div class="finger-value">-</div></div>
+          <div class="finger" id="fL-index"><div class="finger-name" data-i18n="index"></div><div class="finger-value">-</div></div>
+          <div class="finger" id="fL-middle"><div class="finger-name" data-i18n="middle"></div><div class="finger-value">-</div></div>
+          <div class="finger" id="fL-ring"><div class="finger-name" data-i18n="ring"></div><div class="finger-value">-</div></div>
+          <div class="finger" id="fL-little"><div class="finger-name" data-i18n="little"></div><div class="finger-value">-</div></div>
+        </div>
+        <div class="sub-label" data-i18n="rightHand"></div>
+        <div class="fingers">
+          <div class="finger" id="fR-thumb"><div class="finger-name" data-i18n="thumb"></div><div class="finger-value">-</div></div>
+          <div class="finger" id="fR-index"><div class="finger-name" data-i18n="index"></div><div class="finger-value">-</div></div>
+          <div class="finger" id="fR-middle"><div class="finger-name" data-i18n="middle"></div><div class="finger-value">-</div></div>
+          <div class="finger" id="fR-ring"><div class="finger-name" data-i18n="ring"></div><div class="finger-value">-</div></div>
+          <div class="finger" id="fR-little"><div class="finger-name" data-i18n="little"></div><div class="finger-value">-</div></div>
+        </div>
+      </div>
+ 
+      <div class="card">
+        <div class="card-label">EXPRESSION SPECTRUM</div>
+        <div class="spectrum" id="spectrum"></div>
+      </div>
+ 
+      <div class="card metrics-card">
+        <div class="card-label">FACIAL METRICS</div>
+        <div class="metrics-grid" id="metricsGrid"></div>
+      </div>
+ 
+      <div class="card">
+        <div class="card-label" data-i18n="faceTone"></div>
+        <div id="toneStyle">Neutral</div>
+        <div class="face-grid">
+          <div class="finger" id="fc-smile"><div class="finger-name" data-i18n="smile"></div><div class="finger-value">-</div></div>
+          <div class="finger" id="fc-brow"><div class="finger-name" data-i18n="brow"></div><div class="finger-value">-</div></div>
+          <div class="finger" id="fc-eye"><div class="finger-name" data-i18n="eyes"></div><div class="finger-value">-</div></div>
+          <div class="finger" id="fc-mouth"><div class="finger-name" data-i18n="mouth"></div><div class="finger-value">-</div></div>
+          <div class="finger" id="fc-pitch"><div class="finger-name" data-i18n="pitch"></div><div class="finger-value">-</div></div>
+          <div class="finger" id="fc-rate"><div class="finger-name" data-i18n="rate"></div><div class="finger-value">-</div></div>
+        </div>
+      </div>
+ 
+      <div class="card log-card">
+        <div class="card-label">EVENT LOG</div>
+        <div class="log-feed" id="logFeed"></div>
+      </div>
+ 
+      <div class="card">
+        <div class="card-label" data-i18n="repoTitle2"></div>
+        <input class="search" id="repoSearch" type="search" data-i18n-ph="search" oninput="buildGestureTable(this.value)" autocomplete="off">
+        <div class="gest-wrap"><table class="gest-table" id="gestTable"></table></div>
+        <div class="mini-note" data-i18n="repoNote"></div>
+      </div>
+    </aside>
+  </main>
+ 
+  <footer class="footbar">
+    <span>MEDIAPIPE HANDS + FACE MESH · 468-POINT TRACKING</span><span class="sep">·</span>
+    <span>ON-DEVICE INFERENCE — NO VIDEO LEAVES YOUR BROWSER</span>
+  </footer>
+</div>
+ 
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js" crossorigin="anonymous"></script>
+<script>
+/**
+ * Heuristic facial-expression classifier built on MediaPipe FaceMesh's
+ * 468 normalized landmarks. No ML classification head is trained here —
+ * expressions are inferred from geometric ratios (mouth curvature/openness,
+ * eyebrow position, eye aperture) which is enough for a clear demo signal.
+ */
+// FACIUAL EXDPRESSIONS ANALYSIS
+ 
+const LM = {
+  leftMouth: 61,
+  rightMouth: 291,
+  upperLip: 13,
+  lowerLip: 14,
+  leftEyeTop: 159,
+  leftEyeBottom: 145,
+  rightEyeTop: 386,
+  rightEyeBottom: 374,
+  leftEyeInner: 133,
+  leftEyeOuter: 33,
+  rightEyeInner: 362,
+  rightEyeOuter: 263,
+  leftBrowInner: 55,
+  leftBrowOuter: 105,
+  rightBrowInner: 285,
+  rightBrowOuter: 334,
+  browCenterL: 65,
+  browCenterR: 295,
+  noseTip: 1,
+  chin: 152,
+  foreheadTop: 10,
+  leftCheek: 234,
+  rightCheek: 454,
+};
+ 
+function dist(a, b) {
+  return Math.hypot(a.x - b.x, a.y - b.y);
+}
+ 
+function clamp01(v) {
+  return Math.max(0, Math.min(1, v));
+}
+ 
+class ExpressionEngine {
+  constructor() {
+    this.baseline = null;
+    this.history = [];
+  }
+ 
+  // Establishes a rough neutral baseline from the first few frames so the
+  // system adapts to different face proportions instead of using fixed thresholds.
+  calibrate(metrics) {
+    if (!this.baseline) {
+      this.baseline = { ...metrics };
+      return;
+    }
+    const alpha = 0.02;
+    for (const k in metrics) {
+      this.baseline[k] = this.baseline[k] * (1 - alpha) + metrics[k] * alpha;
+    }
+  }
+ 
+  computeMetrics(points) {
+    const faceHeight = dist(points[LM.foreheadTop], points[LM.chin]) || 1;
+    const faceWidth = dist(points[LM.leftCheek], points[LM.rightCheek]) || 1;
+ 
+    const mouthOpen = dist(points[LM.upperLip], points[LM.lowerLip]) / faceHeight;
+    const mouthWidth = dist(points[LM.leftMouth], points[LM.rightMouth]) / faceWidth;
+ 
+    const mouthCenterY = (points[LM.upperLip].y + points[LM.lowerLip].y) / 2;
+    const cornerAvgY = (points[LM.leftMouth].y + points[LM.rightMouth].y) / 2;
+    // Negative when corners rise above mouth center (smile), positive when they droop (frown)
+    const mouthCurve = (cornerAvgY - mouthCenterY) / faceHeight;
+ 
+    const leftEyeOpen = dist(points[LM.leftEyeTop], points[LM.leftEyeBottom]) / faceHeight;
+    const rightEyeOpen = dist(points[LM.rightEyeTop], points[LM.rightEyeBottom]) / faceHeight;
+    const eyeOpen = (leftEyeOpen + rightEyeOpen) / 2;
+ 
+    const leftBrowRaise = (points[LM.leftEyeTop].y - points[LM.browCenterL].y) / faceHeight;
+    const rightBrowRaise = (points[LM.rightEyeTop].y - points[LM.browCenterR].y) / faceHeight;
+    const browRaise = (leftBrowRaise + rightBrowRaise) / 2;
+ 
+    const browGap = dist(points[LM.leftBrowInner], points[LM.rightBrowInner]) / faceWidth;
+ 
+    return { mouthOpen, mouthWidth, mouthCurve, eyeOpen, browRaise, browGap, faceHeight, faceWidth };
+  }
+ 
+  classify(points) {
+    const m = this.computeMetrics(points);
+    this.calibrate(m);
+    const b = this.baseline;
+ 
+    const dMouthCurve = m.mouthCurve - b.mouthCurve; // positive = smiling more than baseline
+    const dMouthOpen = m.mouthOpen - b.mouthOpen;
+    const dBrowRaise = m.browRaise - b.browRaise; // positive = brows raised
+    const dBrowGap = m.browGap - b.browGap; // negative = brows pulled together (furrow)
+    const dEyeOpen = m.eyeOpen - b.eyeOpen; // positive = eyes wider
+ 
+    const scores = { happy: 0, sad: 0, angry: 0, surprised: 0, neutral: 0.15 };
+ 
+    scores.sad = clamp01(dMouthCurve * 18 + m.mouthWidth * 0.6 + Math.max(0, dMouthOpen) * 2);
+    scores.happy = clamp01(-dMouthCurve * 16 + Math.max(0, -dBrowRaise) * 6 + Math.max(0, -dBrowGap) * 2);
+    scores.angry = clamp01(Math.max(0, -dBrowGap) * 10 + Math.max(0, -dBrowRaise) * 4 + Math.max(0, -dMouthCurve) * 6);
+    scores.surprised = clamp01(Math.max(0, dBrowRaise) * 10 + Math.max(0, dEyeOpen) * 12 + Math.max(0, dMouthOpen) * 6);
+ 
+    const total = Object.values(scores).reduce((a, c) => a + c, 0) || 1;
+    for (const k in scores) scores[k] = scores[k] / total;
+ 
+    let label = 'neutral';
+    let top = scores.neutral;
+    for (const k in scores) {
+      if (scores[k] > top) {
+        top = scores[k];
+        label = k;
+      }
+    }
+ 
+    if (top < 0.28) label = 'neutral';
+ 
+    return { label, confidence: top, scores, metrics: m };
+  }
+}
+ 
+const EXPRESSION_META = {
+  happy: { icon: '◡', color: '#39ff8f' },
+  sad: { icon: '◠', color: '#7fd6a0' },
+  angry: { icon: '◢◣', color: '#ff4d5e' },
+  surprised: { icon: '◎', color: '#ffcf4d' },
+  neutral: { icon: '—', color: '#8a958e' },
+};
+</script>
+<script>
+//DATASET OF 64 SIGNS
+const GESTURES = {
+  "00000":"STOP",            "00001":"WASHROOM",       "00010":"PLEASE HELP",   "00011":"HOLD ON",
+  "00100":"LET'S EAT",       "00101":"OVER THERE",     "00110":"LITTLE BIT",    "00111":"I / ME",
+  "01000":"ONE",             "01001":"WE WON!",        "01010":"I'M ANGRY",     "01011":"I WANT THIS",
+  "01100":"TAKE MY PHOTO",   "01101":"I DON'T KNOW",   "01110":"WHAT?",         "01111":"Hi",
+  "10000":"Good / Okay",     "10001":"CALL ME",        "10010":"THANK YOU",     "10011":"SORRY",
+  "10100":"NO",              "10101":"YES",            "10110":"I UNDERSTAND",  "10111":"I DON'T UNDERSTAND",
+  "11000":"OVER THERE",      "11001":"COME HERE",      "11010":"WAIT",          "11011":"LOOK!",
+  "11100":"WE DID IT!",      "11101":"AMAZING",        "11110":"PLEASE",        "11111":"HELLO"
+};
+const EMOJI = {"11111":"🖐️","00000":"✊","01000":"☝️","01100":"📷","10000":"👍","10001":"🤙","10100":"👎","10101":"✋"};
+ // DATA SET OF 1024 SIGNS 
+const TWO_HANDED = {'0000000000':'I','0000000001':'you','0000000010':'he','0000000011':'she','0000000100':'we','0000000101':'they','0000000110':'me','0000000111':'my','0000001000':'your','0000001001':'our','0000001010':'their','0000001011':'this','0000001100':'that','0000001101':'these','0000001110':'those','0000001111':'here','0000010000':'there','0000010001':'yes','0000010010':'no','0000010011':'and','0000010100':'but','0000010101':'because','0000010110':'so','0000010111':'if','0000011000':'then','0000011001':'not','0000011010':'can','0000011011':'cannot','0000011100':'will','0000011101':'should','0000011110':'please','0000011111':'thanks','0000100000':'be','0000100001':'am','0000100010':'are','0000100011':'do','0000100100':'doing','0000100101':'have','0000100110':'need','0000100111':'want','0000101000':'like','0000101001':'know','0000101010':'understand','0000101011':'go','0000101100':'come','0000101101':'stay','0000101110':'help','0000101111':'give','0000110000':'take','0000110001':'see','0000110010':'hear','0000110011':'speak','0000110100':'tell','0000110101':'show','0000110110':'wait','0000110111':'ready','0000111000':'busy','0000111001':'free','0000111010':'done','0000111011':'okay','0000111100':'good','0000111101':'bad','0000111110':'more','0000111111':'less','0001000000':'What?','0001000001':'Who?','0001000010':'Where?','0001000011':'When?','0001000100':'Why?','0001000101':'How?','0001000110':'Which?','0001000111':'What happened?','0001001000':'What do you mean?','0001001001':'Can you repeat that?','0001001010':'Can you speak slowly?','0001001011':'Can you speak louder?','0001001100':'Can you explain?','0001001101':'Can you show me?','0001001110':'Can I ask something?','0001001111':'Can I come with you?','0001010000':'Can I sit here?','0001010001':'Can I use this?','0001010010':'Where are you?','0001010011':'Where are you going?','0001010100':'Where is it?','0001010101':'Where is the bathroom?','0001010110':'Where is the station?','0001010111':'When will you come?','0001011000':'When can we start?','0001011001':'Why are you upset?','0001011010':'Are you okay?','0001011011':'What do you need?','0001011100':'What do you want?','0001011101':'Do you understand?','0001011110':'Do you hear me?','0001011111':'Is everything okay?','0001100000':'my mother','0001100001':'my father','0001100010':'my brother','0001100011':'my sister','0001100100':'my friend','0001100101':'your friend','0001100110':'my teacher','0001100111':'your teacher','0001101000':'the doctor','0001101001':'the nurse','0001101010':'the police officer','0001101011':'the driver','0001101100':'the worker','0001101101':'my neighbor','0001101110':'the child','0001101111':'the baby','0001110000':'this man','0001110001':'this woman','0001110010':'this person','0001110011':'everyone here','0001110100':'someone here','0001110101':'nobody here','0001110110':'my family','0001110111':'your family','0001111000':'my parents','0001111001':'my husband','0001111010':'my wife','0001111011':'my son','0001111100':'my daughter','0001111101':'my uncle','0001111110':'my aunt','0001111111':'our team','0010000000':'at home','0010000001':'at my house','0010000010':'in my room','0010000011':'in the bedroom','0010000100':'in the kitchen','0010000101':'in the bathroom','0010000110':'at school','0010000111':'at college','0010001000':'at work','0010001001':'in the office','0010001010':'at the hospital','0010001011':'at the clinic','0010001100':'at the shop','0010001101':'at the market','0010001110':'at the restaurant','0010001111':'in the park','0010010000':'on the road','0010010001':'on the street','0010010010':'at the station','0010010011':'at the airport','0010010100':'at the bus stop','0010010101':'at the train station','0010010110':'at the hotel','0010010111':'at the bank','0010011000':'at the pharmacy','0010011001':'near here','0010011010':'far from here','0010011011':'on the left','0010011100':'on the right','0010011101':'in front','0010011110':'behind you','0010011111':'outside','0010100000':'I need food','0010100001':'I need water','0010100010':'I want food','0010100011':'I want water','0010100100':'I am hungry','0010100101':'I am thirsty','0010100110':'I want rice','0010100111':'I want bread','0010101000':'I want fruit','0010101001':'I want vegetables','0010101010':'I want an apple','0010101011':'I want a banana','0010101100':'I want milk','0010101101':'I want tea','0010101110':'I want coffee','0010101111':'I want juice','0010110000':'I need breakfast','0010110001':'I need lunch','0010110010':'I need dinner','0010110011':'I want a snack','0010110100':'give me a plate','0010110101':'give me a spoon','0010110110':'give me a cup','0010110111':'give me a glass','0010111000':'give me a bottle','0010111001':'I want to eat','0010111010':'I want to drink','0010111011':'I want to cook','0010111100':'it\'s hot','0010111101':'it\'s cold','0010111110':'it\'s delicious','0010111111':'no spicy food','0011000000':'I am working','0011000001':'I am doing my work','0011000010':'I am studying','0011000011':'I am doing my homework','0011000100':'I am reading','0011000101':'I am writing','0011000110':'I am learning','0011000111':'I have a question','0011001000':'I have the answer','0011001001':'I have a problem','0011001010':'I found the solution','0011001011':'I have an idea','0011001100':'I need money','0011001101':'I need to pay','0011001110':'I need to buy this','0011001111':'I want to sell this','0011010000':'How much does it cost?','0011010001':'That\'s too expensive','0011010010':'This is cheap','0011010011':'Where is my phone?','0011010100':'I need my computer','0011010101':'I need internet','0011010110':'Send me a message','0011010111':'Call me','0011011000':'Text me','0011011001':'Send an email','0011011010':'Send a photo','0011011011':'Send a video','0011011100':'Open the book','0011011101':'Read this','0011011110':'Write this','0011011111':'Let\'s study','0011100000':'right now','0011100001':'not now','0011100010':'today','0011100011':'tomorrow','0011100100':'yesterday','0011100101':'this morning','0011100110':'this afternoon','0011100111':'this evening','0011101000':'tonight','0011101001':'later today','0011101010':'tomorrow morning','0011101011':'tomorrow evening','0011101100':'next week','0011101101':'this month','0011101110':'next month','0011101111':'this year','0011110000':'next year','0011110001':'before that','0011110010':'after that','0011110011':'very soon','0011110100':'a little later','0011110101':'early today','0011110110':'I am late','0011110111':'I have time','0011111000':'I don\'t have time','0011111001':'give me one minute','0011111010':'give me one hour','0011111011':'What time is it?','0011111100':'What is the schedule?','0011111101':'I have an appointment','0011111110':'I have a meeting','0011111111':'free time','0100000000':'my health is okay','0100000001':'I need medicine','0100000010':'I need a tablet','0100000011':'I have a fever','0100000100':'I have a headache','0100000101':'my stomach hurts','0100000110':'I have a cough','0100000111':'my throat hurts','0100001000':'I am in pain','0100001001':'I am injured','0100001010':'I need rest','0100001011':'I need sleep','0100001100':'I need to wake up','0100001101':'I need exercise','0100001110':'I want to walk','0100001111':'I want to run','0100010000':'I need to sit','0100010001':'I need to stand','0100010010':'I need to lie down','0100010011':'I need to breathe','0100010100':'I need to relax','0100010101':'I have a doctor appointment','0100010110':'call the doctor','0100010111':'take me to the hospital','0100011000':'I need a drink','0100011001':'I need something to eat','0100011010':'I feel better','0100011011':'I feel worse','0100011100':'I feel sick','0100011101':'please stay with me','0100011110':'please be careful','0100011111':'I need someone with me','0100100000':'I am happy','0100100001':'I am sad','0100100010':'I am angry','0100100011':'I am afraid','0100100100':'I am worried','0100100101':'I am excited','0100100110':'I am calm','0100100111':'I love you','0100101000':'I like this','0100101001':'I don\'t like this','0100101010':'I miss you','0100101011':'I care about you','0100101100':'I trust you','0100101101':'I hope so','0100101110':'I am scared','0100101111':'I feel safe','0100110000':'this is dangerous','0100110001':'this is important','0100110010':'this is beautiful','0100110011':'that\'s funny','0100110100':'this is serious','0100110101':'please lower your voice','0100110110':'please be loud','0100110111':'go faster','0100111000':'go slowly','0100111001':'it\'s easy','0100111010':'it\'s difficult','0100111011':'I am proud','0100111100':'I am embarrassed','0100111101':'I am nervous','0100111110':'I feel tired','0100111111':'I am bored','0101000000':'I want to travel','0101000001':'this is my trip','0101000010':'I am on a journey','0101000011':'I need a ticket','0101000100':'I am on the bus','0101000101':'I am on the train','0101000110':'I am in the car','0101000111':'I am on the bike','0101001000':'call a taxi','0101001001':'I booked a hotel room','0101001010':'I need the room key','0101001011':'where is my luggage?','0101001100':'where is my bag?','0101001101':'open the gate','0101001110':'where is the gate?','0101001111':'show me the map','0101010000':'this is a road trip','0101010001':'get on here','0101010010':'get off here','0101010011':'stop here','0101010100':'go ahead','0101010101':'turn left','0101010110':'turn right','0101010111':'go straight','0101011000':'come back','0101011001':'go back','0101011010':'wait here','0101011011':'meet me here','0101011100':'pick me up','0101011101':'drop me off','0101011110':'I am lost','0101011111':'I need directions','0101100000':'clean this','0101100001':'wash this','0101100010':'I need a shower','0101100011':'brush your teeth','0101100100':'where are my clothes?','0101100101':'where are my shoes?','0101100110':'my bed is here','0101100111':'sit on the chair','0101101000':'put it on the table','0101101001':'turn on the light','0101101010':'turn on the fan','0101101011':'open the window','0101101100':'where is the key?','0101101101':'I need soap','0101101110':'look in the mirror','0101101111':'open the door','0101110000':'close the door','0101110001':'lock the door','0101110010':'unlock the door','0101110011':'the electricity is off','0101110100':'I am doing kitchen work','0101110101':'I am doing laundry','0101110110':'my homework is done','0101110111':'food is ready','0101111000':'dinner is ready','0101111001':'I am at home','0101111010':'I am outside','0101111011':'I am in my room','0101111100':'come inside','0101111101':'go outside','0101111110':'sit down','0101111111':'stand up','0110000000':'I need to charge my phone','0110000001':'I need a charger','0110000010':'my phone is charging','0110000011':'connect to Wi-Fi','0110000100':'what is the password?','0110000101':'open my account','0110000110':'launch the app','0110000111':'open the website','0110001000':'turn on the camera','0110001001':'turn on the microphone','0110001010':'turn on the speaker','0110001011':'look at the screen','0110001100':'use the keyboard','0110001101':'use the mouse','0110001110':'open the file','0110001111':'open the folder','0110010000':'download this','0110010001':'upload this','0110010010':'save this','0110010011':'delete this','0110010100':'open the app','0110010101':'close the app','0110010110':'turn it on','0110010111':'turn it off','0110011000':'connect it','0110011001':'disconnect it','0110011010':'there is no internet','0110011011':'my battery is low','0110011100':'send me a message','0110011101':'answer the call','0110011110':'call me back','0110011111':'start a video call','0110100000':'I am at the shop','0110100001':'I want to buy this','0110100010':'how much is this?','0110100011':'that is too expensive','0110100100':'do you have a cheaper one?','0110100101':'do you have another one?','0110100110':'I will take it','0110100111':'I don\'t want it','0110101000':'I need a bag','0110101001':'I need change','0110101010':'keep the change','0110101011':'I will pay by card','0110101100':'I will pay in cash','0110101101':'give me the receipt','0110101110':'where is the cashier?','0110101111':'can I pay here?','0110110000':'it is sold out','0110110001':'is it available?','0110110010':'what size is this?','0110110011':'what color is this?','0110110100':'do you have a bigger one?','0110110101':'do you have a smaller one?','0110110110':'I want the same one','0110110111':'I want a different one','0110111000':'this is broken','0110111001':'this is new','0110111010':'this is used','0110111011':'I want to place an order','0110111100':'where is my delivery?','0110111101':'this is my address','0110111110':'where is my package?','0110111111':'I want a refund','0111000000':'I need assistance','0111000001':'emergency','0111000010':'fire','0111000011':'police','0111000100':'I need help finding my way','0111000101':'something is missing','0111000110':'it is not working','0111000111':'there is a problem here','0111001000':'something is wrong','0111001001':'I need support','0111001010':'I need a break','0111001011':'give me some time','0111001100':'I need to think','0111001101':'I don\'t know','0111001110':'I understand','0111001111':'I don\'t understand','0111010000':'please repeat','0111010001':'please speak slowly','0111010010':'please speak louder','0111010011':'I cannot hear you','0111010100':'I cannot see it','0111010101':'look here','0111010110':'listen carefully','0111010111':'be careful','0111011000':'please be quiet','0111011001':'don\'t worry','0111011010':'it\'s okay','0111011011':'no problem','0111011100':'not yet','0111011101':'almost done','0111011110':'I am finished','0111011111':'let\'s start again','0111100000':'Good morning','0111100001':'Good afternoon','0111100010':'Good evening','0111100011':'Good night','0111100100':'How are you?','0111100101':'I am fine','0111100110':'I am okay','0111100111':'I feel exhausted','0111101000':'I feel hungry','0111101001':'I feel thirsty','0111101010':'I am cold','0111101011':'I am hot','0111101100':'I am sick','0111101101':'Thank you very much','0111101110':'You\'re welcome','0111101111':'Excuse me','0111110000':'I\'m sorry','0111110001':'It\'s okay','0111110010':'Nice to meet you','0111110011':'See you later','0111110100':'See you tomorrow','0111110101':'Take care','0111110110':'Have a good day','0111110111':'Congratulations','0111111000':'Happy birthday','0111111001':'Good luck','0111111010':'I agree','0111111011':'I don\'t agree','0111111100':'That\'s right','0111111101':'That\'s wrong','0111111110':'Of course','0111111111':'Maybe later','1000000000':'Actually','1000000001':'Maybe','1000000010':'Probably','1000000011':'Definitely','1000000100':'Already','1000000101':'Still','1000000110':'Again','1000000111':'Together','1000001000':'Alone','1000001001':'Almost','1000001010':'Exactly','1000001011':'Especially','1000001100':'Usually','1000001101':'Sometimes','1000001110':'Rarely','1000001111':'Never','1000010000':'Always','1000010001':'Enough','1000010010':'Too much','1000010011':'Too little','1000010100':'At least','1000010101':'At most','1000010110':'Mostly','1000010111':'Only this time','1000011000':'One more','1000011001':'Another one','1000011010':'The same thing','1000011011':'Something else','1000011100':'Anything else','1000011101':'Nothing else','1000011110':'From now on','1000011111':'For now','1000100000':'Nice to see you','1000100001':'How have you been?','1000100010':'Long time no see','1000100011':'What are you doing?','1000100100':'What are you looking for?','1000100101':'What happened here?','1000100110':'What happened to you?','1000100111':'How did this happen?','1000101000':'What should I do?','1000101001':'What can I do?','1000101010':'Can we talk?','1000101011':'Can we go?','1000101100':'Can you stay?','1000101101':'Can you wait a moment?','1000101110':'Can you come with me?','1000101111':'Can you take me there?','1000110000':'Can you explain again?','1000110001':'Can you write it down?','1000110010':'Please show me once','1000110011':'Please don\'t rush','1000110100':'Speak normally','1000110101':'Speak softly','1000110110':'I am listening','1000110111':'I am watching','1000111000':'I am trying','1000111001':'I am learning','1000111010':'I am not sure','1000111011':'I think so','1000111100':'I don\'t think so','1000111101':'I agree with you','1000111110':'I don\'t agree','1000111111':'That\'s what I mean','1001000000':'May I enter?','1001000001':'May I leave?','1001000010':'May I use this?','1001000011':'May I borrow it?','1001000100':'May I take a photo?','1001000101':'May I ask your name?','1001000110':'Could you help me?','1001000111':'Could you call them?','1001001000':'Could you wait outside?','1001001001':'Please open this','1001001010':'Please close this','1001001011':'Please bring water','1001001100':'Please bring food','1001001101':'Please bring medicine','1001001110':'Please give me a chair','1001001111':'Please give me a minute','1001010000':'Please give me directions','1001010001':'Please write your address','1001010010':'Please send the location','1001010011':'Please send the details','1001010100':'Please check this','1001010101':'Please check again','1001010110':'Please tell me the price','1001010111':'Please tell me the time','1001011000':'Please tell me the answer','1001011001':'Please tell me the truth','1001011010':'Don\'t do that','1001011011':'Don\'t go there','1001011100':'Don\'t touch this','1001011101':'Don\'t forget this','1001011110':'Remember this','1001011111':'Keep this safe','1001100000':'My room is messy','1001100001':'The house is clean','1001100010':'Dinner is ready','1001100011':'Lunch is ready','1001100100':'Breakfast is ready','1001100101':'I am cooking','1001100110':'I am cleaning','1001100111':'I am washing clothes','1001101000':'I am washing dishes','1001101001':'I am doing the laundry','1001101010':'I am going to sleep','1001101011':'I am awake now','1001101100':'Wake me up later','1001101101':'I need some privacy','1001101110':'I need some quiet','1001101111':'Someone is at the door','1001110000':'Who is at the door?','1001110001':'Please open the door','1001110010':'Please close the window','1001110011':'The light is on','1001110100':'The light is off','1001110101':'The fan is on','1001110110':'The fan is off','1001110111':'Where are my glasses?','1001111000':'Where are my keys?','1001111001':'Where is my wallet?','1001111010':'I found my keys','1001111011':'I lost my wallet','1001111100':'My family is visiting','1001111101':'My friend is staying here','1001111110':'We are eating together','1001111111':'We are leaving together','1010000000':'Class starts now','1010000001':'Class is finished','1010000010':'Teacher is here','1010000011':'Teacher is absent','1010000100':'Student is absent','1010000101':'I have homework','1010000110':'I finished homework','1010000111':'I need help with homework','1010001000':'I have an exam','1010001001':'Exam is tomorrow','1010001010':'I forgot my book','1010001011':'I forgot my notebook','1010001100':'I need a pen','1010001101':'My pen is missing','1010001110':'Please explain this topic','1010001111':'Please explain this question','1010010000':'I know the answer','1010010001':'I don\'t know the answer','1010010010':'I made a mistake','1010010011':'Please correct me','1010010100':'This question is difficult','1010010101':'This question is easy','1010010110':'I need more practice','1010010111':'I need more time','1010011000':'Can we start again?','1010011001':'Can we study together?','1010011010':'I need a break','1010011011':'I will finish soon','1010011100':'I am preparing for the exam','1010011101':'My result is ready','1010011110':'I passed the test','1010011111':'Where is the classroom?','1010100000':'I am at work','1010100001':'I am working now','1010100010':'I finished the task','1010100011':'The task is pending','1010100100':'The task is urgent','1010100101':'The project is ready','1010100110':'The project needs changes','1010100111':'I need the report','1010101000':'Send the report','1010101001':'Check the document','1010101010':'Sign the document','1010101011':'Print the document','1010101100':'Make a copy','1010101101':'I have a meeting','1010101110':'The meeting starts soon','1010101111':'The meeting is cancelled','1010110000':'The meeting is over','1010110001':'I need a day off','1010110010':'I am on leave','1010110011':'I will be late to work','1010110100':'I need permission','1010110101':'My manager is here','1010110110':'My colleague is here','1010110111':'The customer is waiting','1010111000':'The customer called','1010111001':'I received the payment','1010111010':'The payment is missing','1010111011':'The order is ready','1010111100':'The order is delayed','1010111101':'Please send the invoice','1010111110':'Please confirm the details','1010111111':'I will finish this today','1011000000':'I feel dizzy','1011000001':'I feel weak','1011000010':'I feel nauseous','1011000011':'I have a sore throat','1011000100':'I have a runny nose','1011000101':'I am coughing badly','1011000110':'I have trouble sleeping','1011000111':'I cannot sleep','1011001000':'I woke up early','1011001001':'I feel very tired','1011001010':'I need to sit down','1011001011':'I need fresh air','1011001100':'I need to lie down','1011001101':'I need someone nearby','1011001110':'I have pain here','1011001111':'The pain is getting worse','1011010000':'The pain is getting better','1011010001':'I need to check my temperature','1011010010':'I need to take my medicine','1011010011':'Did I take my medicine?','1011010100':'I missed my medicine','1011010101':'I need medical advice','1011010110':'I need a checkup','1011010111':'I need a test','1011011000':'I need a prescription','1011011001':'Where is the clinic?','1011011010':'Where is the pharmacy?','1011011011':'Please call my doctor','1011011100':'Please call my family','1011011101':'I have an allergy','1011011110':'I am feeling better now','1011011111':'I need to stay home','1011100000':'There is smoke','1011100001':'There is a gas leak','1011100010':'The door is locked','1011100011':'The door is broken','1011100100':'The elevator is stuck','1011100101':'The road is blocked','1011100110':'The bridge is closed','1011100111':'There is an accident','1011101000':'Someone needs help','1011101001':'Please call emergency services','1011101010':'Please move away','1011101011':'Stay behind me','1011101100':'Stay together','1011101101':'Do not enter','1011101110':'Do not cross','1011101111':'Keep the door closed','1011110000':'Keep away from fire','1011110001':'I need immediate help','1011110010':'I am lost and alone','1011110011':'My child is missing','1011110100':'I cannot find my family','1011110101':'I lost my phone','1011110110':'My wallet is missing','1011110111':'Someone took my bag','1011111000':'I need security','1011111001':'Where is the police station?','1011111010':'Where is the hospital entrance?','1011111011':'Where is the nearest exit?','1011111100':'Is this area safe?','1011111101':'Please stay calm','1011111110':'Help is coming','1011111111':'I am safe now','1100000000':'I feel confident','1100000001':'I feel confused','1100000010':'I feel embarrassed','1100000011':'I feel frustrated','1100000100':'I feel disappointed','1100000101':'I feel surprised','1100000110':'I feel curious','1100000111':'I feel lonely','1100001000':'I feel comfortable','1100001001':'I feel uncomfortable','1100001010':'I feel nervous','1100001011':'I feel hopeful','1100001100':'I am proud of you','1100001101':'I am proud of myself','1100001110':'I am excited about this','1100001111':'I am worried about it','1100010000':'I am interested in this','1100010001':'I am not interested','1100010010':'I like your idea','1100010011':'I don\'t like this idea','1100010100':'I prefer this one','1100010101':'I prefer the other one','1100010110':'I changed my mind','1100010111':'I have changed plans','1100011000':'I need some space','1100011001':'I need someone to listen','1100011010':'Please don\'t be angry','1100011011':'Please don\'t worry','1100011100':'Don\'t be afraid','1100011101':'I trust you','1100011110':'I believe you','1100011111':'I forgive you','1100100000':'Where is the entrance?','1100100001':'Where is the exit?','1100100010':'Where is the ticket counter?','1100100011':'Where is the platform?','1100100100':'Where is the boarding gate?','1100100101':'When does the bus leave?','1100100110':'When does the train leave?','1100100111':'When does it arrive?','1100101000':'How much is the fare?','1100101001':'I missed the bus','1100101010':'I missed the train','1100101011':'My ticket is lost','1100101100':'My luggage is missing','1100101101':'My bag is missing','1100101110':'This is my seat','1100101111':'Is this seat free?','1100110000':'I need a window seat','1100110001':'I need an aisle seat','1100110010':'Please stop here','1100110011':'Please drop me here','1100110100':'Please pick me up here','1100110101':'I am going to the airport','1100110110':'I am going to the station','1100110111':'I am looking for a taxi','1100111000':'I booked a room','1100111001':'I need the hotel address','1100111010':'I need the room number','1100111011':'Where is the elevator?','1100111100':'Where is the restroom?','1100111101':'I need a map','1100111110':'Show me the route','1100111111':'Is this the right way?','1101000000':'How much is this item?','1101000001':'Do you have this in another size?','1101000010':'Do you have another color?','1101000011':'I want to try this','1101000100':'I want to see another one','1101000101':'I will buy this','1101000110':'I don\'t want this','1101000111':'This is too expensive','1101001000':'Do you have a discount?','1101001001':'Is there a sale?','1101001010':'I need a receipt','1101001011':'I need a refund','1101001100':'Can I return this?','1101001101':'This item is damaged','1101001110':'This item is missing','1101001111':'My order has arrived','1101010000':'My order is delayed','1101010001':'I want to cancel the order','1101010010':'Where is my delivery?','1101010011':'I need my package today','1101010100':'I would like the menu','1101010101':'What do you recommend?','1101010110':'I am ready to order','1101010111':'No onions please','1101011000':'Less spicy please','1101011001':'More water please','1101011010':'I am allergic to this','1101011011':'I cannot eat this','1101011100':'Please pack this','1101011101':'Please make it fresh','1101011110':'The food tastes good','1101011111':'The food is too salty','1101100000':'My phone is not working','1101100001':'My phone is charging','1101100010':'My battery is low','1101100011':'My battery is full','1101100100':'I have no signal','1101100101':'The internet is slow','1101100110':'The internet is disconnected','1101100111':'What is the Wi-Fi password?','1101101000':'I forgot my password','1101101001':'I cannot log in','1101101010':'My account is locked','1101101011':'Send me the link','1101101100':'Open this link','1101101101':'Share the screen','1101101110':'Share the location','1101101111':'Turn on the camera','1101110000':'Turn off the camera','1101110001':'Mute the microphone','1101110010':'Unmute the microphone','1101110011':'The video is buffering','1101110100':'The sound is delayed','1101110101':'I cannot see the screen','1101110110':'I cannot hear the audio','1101110111':'Send the file again','1101111000':'The file is too large','1101111001':'Download this file','1101111010':'Upload the photo','1101111011':'Save the video','1101111100':'Delete the message','1101111101':'Check your email','1101111110':'Check your phone','1101111111':'Call me on video','1110000000':'What time should we meet?','1110000001':'Where should we meet?','1110000010':'Let\'s meet here','1110000011':'Let\'s meet tomorrow','1110000100':'Let\'s meet later','1110000101':'I will call you at six','1110000110':'I will come in the morning','1110000111':'I will leave in the evening','1110001000':'I need five minutes','1110001001':'I need ten minutes','1110001010':'Give me half an hour','1110001011':'I will be ready soon','1110001100':'I am ready now','1110001101':'I am not ready yet','1110001110':'I am almost ready','1110001111':'I am running late','1110010000':'I arrived early','1110010001':'We have plenty of time','1110010010':'We are out of time','1110010011':'The plan changed','1110010100':'The schedule changed','1110010101':'The meeting moved','1110010110':'The date changed','1110010111':'What is the deadline?','1110011000':'The deadline is tomorrow','1110011001':'I will do it later','1110011010':'Remind me tomorrow','1110011011':'Remind me tonight','1110011100':'Remind me next week','1110011101':'Let\'s do it tomorrow','1110011110':'Let\'s do it now','1110011111':'Let\'s postpone it','1110100000':'Where is the bank?','1110100001':'Where is the post office?','1110100010':'Where is the pharmacy?','1110100011':'Where is the police station?','1110100100':'Where is the fire station?','1110100101':'Where is the hospital?','1110100110':'Where is the bus office?','1110100111':'Where is the ticket office?','1110101000':'I need an ID','1110101001':'I need my passport','1110101010':'I need this document','1110101011':'I need a photocopy','1110101100':'I need to sign here','1110101101':'Where should I sign?','1110101110':'What documents do I need?','1110101111':'What is the procedure?','1110110000':'Where do I submit this?','1110110001':'When will it be ready?','1110110010':'How long will it take?','1110110011':'I need an appointment','1110110100':'I have an appointment','1110110101':'I need to change my appointment','1110110110':'I missed my appointment','1110110111':'Please give me a form','1110111000':'Please help me fill this form','1110111001':'I need a receipt','1110111010':'I need a confirmation','1110111011':'I need proof of payment','1110111100':'My application is pending','1110111101':'My application was accepted','1110111110':'My application was rejected','1110111111':'Who should I contact?','1111000000':'It is raining','1111000001':'It is cloudy','1111000010':'It is sunny','1111000011':'It is windy','1111000100':'It is very hot today','1111000101':'It is very cold today','1111000110':'The weather is changing','1111000111':'There is heavy rain','1111001000':'There is strong wind','1111001001':'There is a storm','1111001010':'There is fog','1111001011':'The road is slippery','1111001100':'The ground is wet','1111001101':'Bring an umbrella','1111001110':'Wear warm clothes','1111001111':'Wear a raincoat','1111010000':'I need fresh air','1111010001':'Open the window','1111010010':'Close the window','1111010011':'The air is dirty','1111010100':'The air is clean','1111010101':'There is too much noise','1111010110':'It is quiet outside','1111010111':'The sun is strong','1111011000':'It is getting dark','1111011001':'It is getting cold','1111011010':'It is getting hot','1111011011':'I like this weather','1111011100':'I don\'t like this weather','1111011101':'Let\'s stay inside','1111011110':'Let\'s go outside','1111011111':'Be careful on the road','1111100000':'I need an idea','1111100001':'I have a better idea','1111100010':'Let\'s try again','1111100011':'Let\'s try something else','1111100100':'It might work','1111100101':'It does not work','1111100110':'This is possible','1111100111':'This is impossible','1111101000':'I am ready to try','1111101001':'I need more information','1111101010':'I need an example','1111101011':'Give me an example','1111101100':'I understand now','1111101101':'Now I understand','1111101110':'I still don\'t understand','1111101111':'That makes sense','1111110000':'That doesn\'t make sense','1111110001':'I remember now','1111110010':'I forgot','1111110011':'I almost forgot','1111110100':'I will remember','1111110101':'Don\'t forget','1111110110':'I changed my mind','1111110111':'I changed the plan','1111111000':'That\'s enough','1111111001':'That\'s all','1111111010':'One more thing','1111111011':'One last question','1111111100':'Let me think','1111111101':'Let me check','1111111110':'I will decide later','1111111111':'We can do it together'};
+ 
+ 
+/* ================= LANGUAGE LAYER (new) ================= */
+const I18N = {
+  en:{
+    eyebrow:"MediaPipe · Multi-device · Browser working",
+    heroH1:"From Gestures <br>To <span>Communication</span>.",
+    heroP:"Point your camera at a hand sign — SignBridge analyzes finger positions in real time and speaks the result aloud.",
+    s01:"01 — Start analysis", startBtn:"▶ ENABLE CAMERA & BEGIN",
+    startNote:"Both hands + face read together · works fully offline after load · working fully on your system",
+    repoTitle:"SIGN REPOSITORY -- A COLLECTION OF A NEW LANGUAGE",
+    chipHello:"HELLO", chipStop:"STOP", chipPhoto:"CLICK PHOTO", chipThanks:"THANK YOU",
+    copyright:"Subjected to Copyright", engine:"ENGINE", detected:"Detected sign",
+    leftHand:"Left hand", rightHand:"Right hand",
+    thumb:"THUMB", index:"INDEX", middle:"MIDDLE", ring:"RING", little:"LITTLE",
+    faceTone:"Face expression → tone", smile:"SMILE", brow:"BROW", eyes:"EYES", mouth:"MOUTH", pitch:"PITCH", rate:"RATE",
+    logTitle:"EVENT LOG", repoTitle2:"Sign repository", search:"Search signs…",
+    repoNote:"1 = finger open · 0 = finger closed · order: thumb·index·middle·ring·little · shown per hand, plus two-hand combos",
+    privacy:"ON-DEVICE INFERENCE — NO VIDEO LEAVES YOUR BROWSER",
+    st_init:"INIT", st_starting:"Starting camera…", st_scan:"Scanning", st_both:"Both hands locked", st_one:"Hand locked", st_blocked:"Camera blocked",
+    hint_show:"Show one or both hands to begin scan", hint_blocked:"Allow camera access in your browser settings",
+    voiceOn:"Voice on", voiceOff:"Voice off", speaking:"Speaking…",
+    vBtnOn:"🔊 VOICE: ON", vBtnOff:"🔊 VOICE: OFF",
+    noSpeech:"Speech synthesis isn't supported in this browser.",
+    more:"more two-hand signs — use search to find them",
+    logStart:"Scan started", logLang:"Language: English",
+    Neutral:"Neutral",Friendly:"Friendly",Firm:"Firm",Surprised:"Surprised",Calm:"Calm",Soft:"Soft"
+  },
+};
+const LANG = "en";
+function t(k){ return (I18N[LANG] && I18N[LANG][k]) || I18N.en[k] || k; }
+let statusKey = "st_init", statusLive = false, hintKey = "";
+ 
+function applyLang(){
+  document.querySelectorAll("[data-i18n]").forEach(el=>{ el.textContent = t(el.getAttribute("data-i18n")); });
+  document.querySelectorAll("[data-i18n-html]").forEach(el=>{ el.innerHTML = t(el.getAttribute("data-i18n-html")); });
+  document.querySelectorAll("[data-i18n-ph]").forEach(el=>{ el.placeholder = t(el.getAttribute("data-i18n-ph")); });
+  renderStatus(); renderHint(); renderVoiceUI();
+  const rs = document.getElementById("repoSearch");
+  buildGestureTable(rs ? rs.value : "");
+  updateFacePanel();
+}
+function setStatus(key, live){ statusKey = key; statusLive = !!live; renderStatus(); }
+function renderStatus(){
+  statusPill.textContent = t(statusKey);
+  statusPill.classList.toggle("live", statusLive);
+}
+function setHint(key){ hintKey = key; renderHint(); }
+function renderHint(){ camHint.textContent = hintKey ? t(hintKey) : ""; }
+ 
+/* ---- sign repository table (language aware + search) ---- */
+function buildGestureTable(q){
+  q = (q||"").trim().toLowerCase();
+  const table = document.getElementById("gestTable");
+  const gH = null;
+  let rows = "";
+  const gKeys = Object.keys(GESTURES).sort();
+  const twoKeys = Object.keys(TWO_HANDED).sort();
+  const gText = p => (gH && gH[p]) || GESTURES[p];
+  const tText = p => TWO_HANDED[p];
+  if(!q){
+    gKeys.forEach(p=>{ rows += `<tr><td>${p}</td><td>${gText(p)}${EMOJI[p]?" "+EMOJI[p]:""}</td></tr>`; });
+    twoKeys.slice(0,64).forEach(p=>{ rows += `<tr><td>${p.slice(0,5)}+${p.slice(5)}</td><td>${tText(p)}</td></tr>`; });
+    rows += `<tr><td colspan="2" style="text-align:center;color:var(--faint);padding-top:8px;">+ ${twoKeys.length-64} ${t("more")}</td></tr>`;
+  } else {
+    let n = 0;
+    for(const p of gKeys){
+      if(n>=120) break;
+      const hay = (p+" "+GESTURES[p]).toLowerCase();
+      if(hay.includes(q)){ rows += `<tr><td>${p}</td><td>${gText(p)}${EMOJI[p]?" "+EMOJI[p]:""}</td></tr>`; n++; }
+    }
+    for(const p of twoKeys){
+      if(n>=120) break;
+      const hay = (p+" "+p.slice(0,5)+"+"+p.slice(5)+" "+TWO_HANDED[p]).toLowerCase();
+      if(hay.includes(q)){ rows += `<tr><td>${p.slice(0,5)}+${p.slice(5)}</td><td>${tText(p)}</td></tr>`; n++; }
+    }
+  }
+  table.innerHTML = rows;
+}
+ 
+/* ---- event log + options (new UI helpers) ---- */
+function addLog(msg){
+  const time = new Date();
+  const ts = `${String(time.getHours()).padStart(2,'0')}:${String(time.getMinutes()).padStart(2,'0')}:${String(time.getSeconds()).padStart(2,'0')}`;
+  const entry = document.createElement('div');
+  entry.className = 'log-entry';
+  const s = document.createElement('span'); s.className = 't'; s.textContent = ts;
+  entry.appendChild(s); entry.appendChild(document.createTextNode(msg));
+  logFeed.prepend(entry);
+  while(logFeed.children.length > 30) logFeed.removeChild(logFeed.lastChild);
+}
+const showOpts = { mesh:true, contours:true, points:false };
+function toggleOpt(name, btn){
+  showOpts[name] = !showOpts[name];
+  btn.classList.toggle("active", showOpts[name]);
+  btn.textContent = name.toUpperCase() + ": " + (showOpts[name] ? "ON" : "OFF");
+}
+ 
+/* ================= ORIGINAL LOGIC (unchanged unless marked) ================= */
+const video = document.getElementById("video");
+const fxCanvas = document.getElementById("fxCanvas");
+const fxCtx = fxCanvas.getContext("2d");
+const statusPill = document.getElementById("statusPill");
+const camHint = document.getElementById("camHint");
+const gestureEl = document.getElementById("gesture");
+const patternEl = document.getElementById("pattern");
+const toneStyleEl = document.getElementById("toneStyle");
+const voiceDot = document.getElementById("voiceDot");
+const voiceLabel = document.getElementById("voiceLabel");
+const voiceToggleBtn = document.getElementById("voiceToggle");
+const lockBar = document.getElementById("lockBar");
+const logFeed = document.getElementById("logFeed");
+const fpsVal = document.getElementById("fpsVal");
+const emotionLabel = document.getElementById("emotionLabel");
+const emotionIcon = document.getElementById("emotionIcon");
+const confidenceBar = document.getElementById("confidenceBar");
+const confidenceValue = document.getElementById("confidenceValue");
+const spectrumEl = document.getElementById("spectrum");
+const metricsGrid = document.getElementById("metricsGrid");
+const expEngine = new ExpressionEngine();
+let lastExprLabel = null;
+const SPECTRUM_ORDER = ['happy','sad','angry','surprised','neutral'];
+SPECTRUM_ORDER.forEach(key=>{
+  const row = document.createElement('div');
+  row.className = 'spectrum-row';
+  row.innerHTML = `<span class="spectrum-name">${key.toUpperCase()}</span><span class="spectrum-track"><span class="spectrum-fill" id="fill-${key}"></span></span><span class="spectrum-val" id="val-${key}">0%</span>`;
+  spectrumEl.appendChild(row);
+});
+[{key:'mouthOpen',label:'MOUTH OPEN'},{key:'mouthCurve',label:'MOUTH CURVE'},{key:'browRaise',label:'BROW RAISE'},{key:'eyeOpen',label:'EYE APERTURE'}].forEach(m=>{
+  const box = document.createElement('div');
+  box.className = 'metric-box';
+  box.innerHTML = `<div class="m-label">${m.label}</div><div class="m-value" id="metric-${m.key}">--</div>`;
+  metricsGrid.appendChild(box);
+});
+function updateExpression(result){
+  const { label, confidence, scores, metrics } = result;
+  if(label !== lastExprLabel){ addLog('Expression → ' + label.toUpperCase()); lastExprLabel = label; }
+  emotionLabel.textContent = label.toUpperCase();
+  emotionIcon.textContent = (EXPRESSION_META[label] && EXPRESSION_META[label].icon) || '◎';
+  const pct = Math.round(confidence*100);
+  confidenceBar.style.width = pct + '%';
+  confidenceValue.textContent = pct;
+  SPECTRUM_ORDER.forEach(key=>{
+    const v = Math.round((scores[key]||0)*100);
+    document.getElementById('fill-'+key).style.width = v + '%';
+    document.getElementById('val-'+key).textContent = v + '%';
+  });
+  ['mouthOpen','mouthCurve','browRaise','eyeOpen'].forEach(k=>{ document.getElementById('metric-'+k).textContent = metrics[k].toFixed(3); });
+}
+function resetExpression(){
+  expEngine.baseline = null; lastExprLabel = null;
+  emotionLabel.textContent = 'STANDBY'; emotionIcon.textContent = '◎';
+  confidenceBar.style.width = '0%'; confidenceValue.textContent = '0';
+}
+ 
+let cameraStream = null;
+let cameraRunning = false;
+let voiceEnabled = false;
+let lastSpeechTime = 0;
+let frameCounter = 0;
+ 
+let previousPhrase = "";
+let previousStyle = "";
+let candidatePhrase = "";
+let candidateCount = 0;
+let lastLogged = "";
+ 
+let smoothCX = null, smoothCY = null, smoothR = 60;
+let handsPresent = false;
+let lastHandsForDraw = [];
+let lastFaceLm = null;   // NEW: face landmarks for the mesh overlay
+ 
+const RAW_TO_USER = { "Left":"Right", "Right":"Left" };
+ 
+function goToCamera(){
+  document.getElementById("homeView").classList.add("hidden");
+  document.getElementById("cameraView").classList.remove("hidden");
+  window.scrollTo(0,0);
+  startCamera();
+}
+ 
+function goHome(){
+  stopCamera();
+  document.getElementById("cameraView").classList.add("hidden");
+  document.getElementById("homeView").classList.remove("hidden");
+}
+ 
+async function startCamera(){
+  setStatus("st_starting", false);
+  try{
+    const stream = await navigator.mediaDevices.getUserMedia({
+      video:{
+        facingMode:"user",
+        width:{ ideal:480 },
+        height:{ ideal:640 },
+        frameRate:{ ideal:15, max:24 }
+      },
+      audio:false
+    });
+    cameraStream = stream;
+    video.srcObject = stream;
+    await video.play();
+    cameraRunning = true;
+    setStatus("st_scan", true);
+    addLog(t("logStart"));
+    processVideo();
+  }catch(err){
+    console.error(err);
+    setStatus("st_blocked", false);
+    setHint("hint_blocked");
+  }
+}
+ 
+function stopCamera(){
+  cameraRunning = false;
+  if(cameraStream){
+    cameraStream.getTracks().forEach(t=>t.stop());
+    cameraStream = null;
+  }
+  try{ speechSynthesis.cancel(); }catch(e){}
+  setStatus("st_init", false);
+  fpsVal.textContent = "--";
+  resetExpression();
+}
+ 
+const hands = new Hands({
+  locateFile:(file)=>`https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
+});
+hands.setOptions({
+  maxNumHands:2,
+  modelComplexity:0,
+  minDetectionConfidence:0.6,
+  minTrackingConfidence:0.5
+});
+hands.onResults(onHandResults);
+ 
+const faceMesh = new FaceMesh({
+  locateFile:(file)=>`https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`
+});
+faceMesh.setOptions({
+  maxNumFaces:1,
+  refineLandmarks:false,
+  minDetectionConfidence:0.6,
+  minTrackingConfidence:0.5
+});
+faceMesh.onResults(onFaceResults);
+ 
+let fpsCount = 0, fpsLast = performance.now();
+async function processVideo(){
+  if(!cameraRunning) return;
+  if(!video.videoWidth){ requestAnimationFrame(processVideo); return; }
+ 
+  fpsCount++;
+  const nowP = performance.now();
+  if(nowP - fpsLast >= 1000){ fpsVal.textContent = Math.round(fpsCount*1000/(nowP-fpsLast)); fpsCount = 0; fpsLast = nowP; }
+ 
+  frameCounter++;
+  if(frameCounter % 2 === 0){
+    try{
+      await hands.send({image:video});
+      await faceMesh.send({image:video});
+    }catch(e){ console.error(e); }
+  } else {
+    drawFrame();
+  }
+  requestAnimationFrame(processVideo);
+}
+ 
+let faceState = {
+  smile:0, browRaise:0, furrow:0, eyeOpen:0.5, mouthOpen:0,
+  valence:0, arousal:0, headYaw:0, headPitch:0, confidence:0
+};
+let faceSeen = false;
+ 
+function clamp(v,lo,hi){ return Math.max(lo, Math.min(hi, v)); }
+function ema(prev, next, a){ return prev + (next-prev)*a; }
+ 
+function onFaceResults(results){
+  if(!results.multiFaceLandmarks || results.multiFaceLandmarks.length===0){
+    faceSeen = false;
+    lastFaceLm = null;
+    faceState.confidence = ema(faceState.confidence, 0, 0.2);
+    updateFacePanel();
+    return;
+  }
+  faceSeen = true;
+  const lm = results.multiFaceLandmarks[0];
+  lastFaceLm = lm;
+  try{ updateExpression(expEngine.classify(lm)); }catch(e){}
+ 
+  const eyeWidthA = distance(lm[33], lm[133]);
+  const eyeWidthB = distance(lm[362], lm[263]);
+  const eyeOpenA = distance(lm[159], lm[145]) / (eyeWidthA||0.05);
+  const eyeOpenB = distance(lm[386], lm[374]) / (eyeWidthB||0.05);
+  const eyeOpenRaw = clamp(((eyeOpenA+eyeOpenB)/2 - 0.15)/0.20, 0, 1);
+ 
+  const browRaiseA = distance(lm[105], lm[159]) / (eyeWidthA||0.05);
+  const browRaiseB = distance(lm[334], lm[386]) / (eyeWidthB||0.05);
+  const browRaiseRaw = clamp(((browRaiseA+browRaiseB)/2 - 0.35)/0.35, 0, 1);
+ 
+  const interocular = distance(lm[33], lm[263]) || 0.1;
+  const mouthWidth = distance(lm[61], lm[291]) / interocular;
+  const smileRaw = clamp((mouthWidth - 0.38)/0.16, 0, 1);
+ 
+  const mouthOpenRaw = clamp((distance(lm[13], lm[14]) / interocular) / 0.22, 0, 1);
+ 
+  const innerBrowGap = distance(lm[55], lm[285]) / interocular;
+  const furrowRaw = clamp(1 - (innerBrowGap - 0.18)/0.12, 0, 1);
+ 
+  const faceWidth = distance(lm[234], lm[454]) || 0.2;
+  const faceCenterX = (lm[234].x + lm[454].x)/2;
+  const yawRaw = clamp(((lm[1].x - faceCenterX) / faceWidth) * 3, -1, 1);
+ 
+  const foreheadY = lm[10].y, chinY = lm[152].y;
+  const pitchRaw = clamp((((lm[1].y - foreheadY)/((chinY-foreheadY)||0.2)) - 0.5)*2, -1, 1);
+ 
+  const a = 0.25;
+  faceState.eyeOpen   = ema(faceState.eyeOpen, eyeOpenRaw, a);
+  faceState.browRaise = ema(faceState.browRaise, browRaiseRaw, a);
+  faceState.smile     = ema(faceState.smile, smileRaw, a);
+  faceState.mouthOpen = ema(faceState.mouthOpen, mouthOpenRaw, a);
+  faceState.furrow    = ema(faceState.furrow, furrowRaw, a);
+  faceState.headYaw   = ema(faceState.headYaw, yawRaw, a);
+  faceState.headPitch = ema(faceState.headPitch, pitchRaw, a);
+  faceState.confidence= ema(faceState.confidence, 1, 0.2);
+ 
+  faceState.valence = clamp(faceState.smile - faceState.furrow*0.8, -1, 1);
+  faceState.arousal = clamp(faceState.eyeOpen*0.4 + faceState.mouthOpen*0.3 + faceState.browRaise*0.3, 0, 1);
+ 
+  updateFacePanel();
+}
+ 
+function faceStyleLabel(fs){
+  if(fs.confidence < 0.25) return "Neutral";
+  if(fs.smile>0.55 && fs.valence>0.3) return "Friendly";
+  if(fs.furrow>0.5) return "Firm";
+  if(fs.arousal>0.6 && fs.mouthOpen>0.35) return "Surprised";
+  if(fs.arousal<0.3 && fs.smile<0.25) return "Calm";
+  if(fs.valence<-0.2) return "Soft";
+  return "Neutral";
+}
+ 
+function faceVoiceProfile(fs){
+  const pitchMod = clamp(1 + fs.valence*0.22 + fs.browRaise*0.08 - fs.furrow*0.12, 0.75, 1.35);
+  const rateMod  = clamp(1 + (fs.arousal-0.5)*0.32, 0.8, 1.25);
+  return { pitchMod, rateMod };
+}
+ 
+function updateFacePanel(){
+  setStat("fc-smile", faceState.confidence>0.25 ? faceState.smile.toFixed(2) : "-");
+  setStat("fc-brow", faceState.confidence>0.25 ? faceState.browRaise.toFixed(2) : "-");
+  setStat("fc-eye", faceState.confidence>0.25 ? faceState.eyeOpen.toFixed(2) : "-");
+  setStat("fc-mouth", faceState.confidence>0.25 ? faceState.mouthOpen.toFixed(2) : "-");
+  const vp = faceVoiceProfile(faceState);
+  setStat("fc-pitch", faceState.confidence>0.25 ? vp.pitchMod.toFixed(2) : "-");
+  setStat("fc-rate", faceState.confidence>0.25 ? vp.rateMod.toFixed(2) : "-");
+  toneStyleEl.textContent = t(faceStyleLabel(faceState));   // display only
+}
+function setStat(id, val){
+  const box = document.getElementById(id);
+  box.querySelector(".finger-value").textContent = val;
+  box.classList.toggle("open", val!=="-" && parseFloat(val)>0.5);
+}
+ 
+function onHandResults(results){
+  fxCanvas.width = video.videoWidth;
+  fxCanvas.height = video.videoHeight;
+ 
+  const byUser = { Left:null, Right:null };
+  if(results.multiHandLandmarks && results.multiHandLandmarks.length){
+    results.multiHandLandmarks.forEach((lm, i)=>{
+      const rawLabel = results.multiHandedness[i].label;
+      const userLabel = RAW_TO_USER[rawLabel] || rawLabel;
+      byUser[userLabel] = lm;
+    });
+  }
+ 
+  const leftLm = byUser.Left, rightLm = byUser.Right;
+  handsPresent = !!(leftLm || rightLm);
+  lastHandsForDraw = [];
+  if(leftLm) lastHandsForDraw.push(leftLm);
+  if(rightLm) lastHandsForDraw.push(rightLm);
+ 
+  if(!handsPresent){
+    setHint("hint_show");
+    setStatus("st_scan", true);
+    resetHandDisplay("fL"); resetHandDisplay("fR");
+    patternEl.innerHTML = "-----&nbsp;&nbsp;-----";
+    settlePhrase("");
+    drawFrame();
+    return;
+  }
+  setHint("");
+  setStatus(leftLm && rightLm ? "st_both" : "st_one", true);
+ 
+  const leftFingers = leftLm ? analyzeFingers(leftLm) : null;
+  const rightFingers = rightLm ? analyzeFingers(rightLm) : null;
+  if(leftFingers) updateFingerDisplay("fL", leftFingers); else resetHandDisplay("fL");
+  if(rightFingers) updateFingerDisplay("fR", rightFingers); else resetHandDisplay("fR");
+ 
+  const leftPattern = leftFingers ? leftFingers.join("") : "-----";
+  const rightPattern = rightFingers ? rightFingers.join("") : "-----";
+  patternEl.innerHTML = `${leftPattern}&nbsp;&nbsp;${rightPattern}`;
+ 
+  // phrase = English (drives voice style + change detection, exactly as before)
+  // shown  = text in the chosen language (display + speech)
+  let phrase = "…", shown = "…";
+  if(leftLm && rightLm){
+    const code = leftPattern + rightPattern;
+    phrase = TWO_HANDED[code] || "…";
+    shown = phrase;
+  } else {
+    const pat = leftLm ? leftPattern : rightPattern;
+    phrase = GESTURES[pat] || "…";
+    shown = phrase;
+  }
+ 
+  settlePhrase(phrase, shown);
+  drawFrame();
+}
+ 
+function settlePhrase(rawPhrase, shownText){
+  if(rawPhrase === candidatePhrase){
+    candidateCount++;
+  } else {
+    candidatePhrase = rawPhrase;
+    candidateCount = 1;
+  }
+  const valid = !!rawPhrase && rawPhrase!=="…";
+  lockBar.style.width = (valid ? Math.min(candidateCount,8)/8*100 : 0) + "%";
+  if(candidateCount < 2) return;
+ 
+  const shown = valid ? (shownText || rawPhrase) : "—";
+  gestureEl.textContent = shown;
+  if(!valid) return;
+ 
+  if(rawPhrase !== lastLogged){ lastLogged = rawPhrase; addLog(shown); }
+ 
+  const style = faceStyleLabel(faceState);
+  const now = Date.now();
+  const phraseChanged = rawPhrase !== previousPhrase;
+  const styleChanged = style !== previousStyle;
+  const cooldownOk = now - lastSpeechTime > (phraseChanged ? 900 : 1600);
+ 
+  if((phraseChanged || styleChanged) && cooldownOk){
+    previousPhrase = rawPhrase;
+    previousStyle = style;
+    lastSpeechTime = now;
+    speak(shown, rawPhrase);
+  }
+}
+ 
+let tAnim = 0;
+function drawFrame(){
+  const w = fxCanvas.width, h = fxCanvas.height;
+  if(!w || !h) return;
+  tAnim += 0.035;
+ 
+  fxCtx.clearRect(0,0,w,h);
+ 
+  const cell = Math.max(18, Math.floor(w/16));
+  fxCtx.save();
+  for(let y=0; y<h; y+=cell){
+    for(let x=0; x<w; x+=cell){
+      const phase = Math.sin((x*0.04)+(y*0.04)+tAnim) * 0.5 + 0.5;
+      const alpha = 0.30 + phase*0.16;
+      fxCtx.fillStyle = `rgba(6,14,10,${alpha})`;
+      fxCtx.fillRect(x+1, y+1, cell-2, cell-2);
+      if(phase > 0.82){
+        fxCtx.strokeStyle = "rgba(57,255,143,0.18)";
+        fxCtx.lineWidth = 1;
+        fxCtx.strokeRect(x+1.5, y+1.5, cell-3, cell-3);
+      }
+    }
+  }
+  fxCtx.restore();
+ 
+  if(lastFaceLm){
+    let x0=1,x1=0,y0=1,y1=0;
+    for(const p of lastFaceLm){ if(p.x<x0)x0=p.x; if(p.x>x1)x1=p.x; if(p.y<y0)y0=p.y; if(p.y>y1)y1=p.y; }
+    const fcx=(x0+x1)/2*w, fcy=(y0+y1)/2*h, fr=Math.max((x1-x0)*w,(y1-y0)*h)*0.78+24;
+    const fg=fxCtx.createRadialGradient(fcx,fcy,fr*0.25,fcx,fcy,fr);
+    fg.addColorStop(0,"rgba(0,0,0,1)"); fg.addColorStop(0.75,"rgba(0,0,0,1)"); fg.addColorStop(1,"rgba(0,0,0,0)");
+    fxCtx.save(); fxCtx.globalCompositeOperation="destination-out"; fxCtx.fillStyle=fg;
+    fxCtx.beginPath(); fxCtx.arc(fcx,fcy,fr,0,Math.PI*2); fxCtx.fill(); fxCtx.restore();
+  }
+ 
+  if(handsPresent && lastHandsForDraw.length){
+    let minX=1,maxX=0,minY=1,maxY=0;
+    for(const lm of lastHandsForDraw){
+      for(const p of lm){
+        if(p.x<minX)minX=p.x; if(p.x>maxX)maxX=p.x;
+        if(p.y<minY)minY=p.y; if(p.y>maxY)maxY=p.y;
+      }
+    }
+    const cx = ((minX+maxX)/2) * w;
+    const cy = ((minY+maxY)/2) * h;
+    const radius = Math.max((maxX-minX)*w, (maxY-minY)*h) * 0.85 + 40;
+ 
+    smoothCX = smoothCX===null ? cx : smoothCX + (cx-smoothCX)*0.35;
+    smoothCY = smoothCY===null ? cy : smoothCY + (cy-smoothCY)*0.35;
+    smoothR  = smoothR + (radius-smoothR)*0.25;
+ 
+    const grad = fxCtx.createRadialGradient(smoothCX,smoothCY,smoothR*0.15,smoothCX,smoothCY,smoothR);
+    grad.addColorStop(0,"rgba(0,0,0,1)");
+    grad.addColorStop(0.7,"rgba(0,0,0,1)");
+    grad.addColorStop(1,"rgba(0,0,0,0)");
+ 
+    fxCtx.save();
+    fxCtx.globalCompositeOperation = "destination-out";
+    fxCtx.fillStyle = grad;
+    fxCtx.beginPath();
+    fxCtx.arc(smoothCX, smoothCY, smoothR, 0, Math.PI*2);
+    fxCtx.fill();
+    fxCtx.restore();
+ 
+    fxCtx.save();
+    fxCtx.strokeStyle = "rgba(57,255,143,0.55)";
+    fxCtx.lineWidth = 2;
+    fxCtx.shadowColor = "rgba(57,255,143,0.9)";
+    fxCtx.shadowBlur = 14;
+    fxCtx.beginPath();
+    fxCtx.arc(smoothCX, smoothCY, smoothR*0.98, 0, Math.PI*2);
+    fxCtx.stroke();
+    fxCtx.restore();
+ 
+    for(const lm of lastHandsForDraw) drawSkeleton(lm, w, h);
+  } else {
+    smoothCX = null; smoothCY = null; smoothR = 60;
+  }
+ 
+  if(lastFaceLm) drawFaceMesh(lastFaceLm, w, h);   // NEW overlay (drawing only)
+}
+ 
+/* ---- NEW: NeuralFace-style face mesh overlay (drawing only, no effect on detection) ---- */
+function faceSet(name){ return window[name] || null; }
+function strokeConnections(set, lm, w, h){
+  if(!set) return;
+  fxCtx.beginPath();
+  for(const c of set){
+    const a = lm[c[0]], b = lm[c[1]];
+    if(!a || !b) continue;
+    fxCtx.moveTo(a.x*w, a.y*h);
+    fxCtx.lineTo(b.x*w, b.y*h);
+  }
+  fxCtx.stroke();
+}
+function drawFaceMesh(lm, w, h){
+  // identical to NeuralFace drawMesh(); k keeps line widths the same on screen
+  const k = 1 / (Math.max(fxCanvas.clientWidth / w, fxCanvas.clientHeight / h) || 1);
+  fxCtx.save();
+  if(showOpts.mesh && window.FACEMESH_TESSELATION){
+    fxCtx.strokeStyle = 'rgba(57, 255, 143, 0.18)';
+    fxCtx.lineWidth = 1 * k;
+    strokeConnections(window.FACEMESH_TESSELATION, lm, w, h);
+  }
+  if(showOpts.contours && window.FACEMESH_FACE_OVAL){
+    fxCtx.strokeStyle = 'rgba(57, 255, 143, 0.9)';
+    fxCtx.lineWidth = 1.6 * k;
+    [window.FACEMESH_FACE_OVAL, window.FACEMESH_LEFT_EYE, window.FACEMESH_RIGHT_EYE,
+     window.FACEMESH_LEFT_EYEBROW, window.FACEMESH_RIGHT_EYEBROW, window.FACEMESH_LIPS]
+      .forEach(s=>strokeConnections(s, lm, w, h));
+  }
+  if(showOpts.points){
+    fxCtx.fillStyle = '#39ff8f';
+    for(const p of lm){ fxCtx.beginPath(); fxCtx.arc(p.x*w, p.y*h, 1.1*k, 0, Math.PI*2); fxCtx.fill(); }
+  }
+  fxCtx.restore();
+}
+ 
+function drawSkeleton(landmarks, w, h){
+  const connections = [
+    [0,1],[1,2],[2,3],[3,4],
+    [0,5],[5,6],[6,7],[7,8],
+    [5,9],[9,10],[10,11],[11,12],
+    [9,13],[13,14],[14,15],[15,16],
+    [13,17],[17,18],[18,19],[19,20],
+    [0,17]
+  ];
+  fxCtx.save();
+  fxCtx.strokeStyle = "rgba(57,255,143,0.9)";
+  fxCtx.lineWidth = 2.2;
+  fxCtx.shadowColor = "rgba(57,255,143,0.8)";
+  fxCtx.shadowBlur = 8;
+  for(const [a,b] of connections){
+    const p1 = landmarks[a], p2 = landmarks[b];
+    fxCtx.beginPath();
+    fxCtx.moveTo(p1.x*w, p1.y*h);
+    fxCtx.lineTo(p2.x*w, p2.y*h);
+    fxCtx.stroke();
+  }
+  fxCtx.shadowBlur = 4;
+  for(const p of landmarks){
+    fxCtx.beginPath();
+    fxCtx.arc(p.x*w, p.y*h, 3.4, 0, Math.PI*2);
+    fxCtx.fillStyle = "#eef4ef";
+    fxCtx.fill();
+  }
+  fxCtx.restore();
+}
+ 
+function distance(a,b){
+  const dx=a.x-b.x, dy=a.y-b.y;
+  return Math.sqrt(dx*dx+dy*dy);
+}
+function isFingerOpen(lm, tip, pip){
+  const wrist = lm[0];
+  return distance(wrist, lm[tip]) > distance(wrist, lm[pip]) * 1.12;
+}
+function analyzeFingers(lm){
+  const thumbOpen = distance(lm[4],lm[5]) > distance(lm[3],lm[5]) * 1.12;
+  return [
+    thumbOpen ? 1 : 0,
+    isFingerOpen(lm,8,6) ? 1 : 0,
+    isFingerOpen(lm,12,10) ? 1 : 0,
+    isFingerOpen(lm,16,14) ? 1 : 0,
+    isFingerOpen(lm,20,18) ? 1 : 0
+  ];
+}
+function updateFingerDisplay(prefix, fingers){
+  const ids = ["thumb","index","middle","ring","little"];
+  ids.forEach((id,i)=>{
+    const box = document.getElementById(prefix+"-"+id);
+    box.querySelector(".finger-value").textContent = fingers[i];
+    box.classList.toggle("open", fingers[i]===1);
+  });
+}
+function resetHandDisplay(prefix){
+  ["thumb","index","middle","ring","little"].forEach(id=>{
+    const box = document.getElementById(prefix+"-"+id);
+    box.querySelector(".finger-value").textContent = "-";
+    box.classList.remove("open");
+  });
+}
+ 
+/* ================= VOICE (improved: language voices, cross-device) ================= */
+let voicesCache = [];
+function refreshVoices(){ try{ voicesCache = speechSynthesis.getVoices() || []; }catch(e){ voicesCache = []; } }
+if("speechSynthesis" in window){
+  refreshVoices();
+  try{ speechSynthesis.addEventListener("voiceschanged", refreshVoices); }catch(e){ speechSynthesis.onvoiceschanged = refreshVoices; }
+}
+function voiceLangTag(){ return "en-US"; }
+function pickVoice(tag){
+  const norm = v => (v.lang||"").replace("_","-").toLowerCase();
+  const want = tag.toLowerCase(), base = want.split("-")[0];
+  let c = voicesCache.filter(v=>norm(v)===want);
+  if(!c.length) c = voicesCache.filter(v=>norm(v).split("-")[0]===base);
+  if(!c.length) return null;
+  c.sort((a,b)=>(b.localService?1:0)-(a.localService?1:0));   // on-device voices start fastest
+  return c[0];
+}
+function renderVoiceUI(){
+  voiceToggleBtn.classList.toggle("on", voiceEnabled);
+  voiceToggleBtn.textContent = voiceEnabled ? t("vBtnOn") : t("vBtnOff");
+  const speaking = voiceDot.classList.contains("speaking");
+  voiceLabel.textContent = speaking ? t("speaking") : (voiceEnabled ? t("voiceOn") : t("voiceOff"));
+}
+function toggleVoice(){
+  if(!("speechSynthesis" in window)){
+    alert(t("noSpeech"));
+    return;
+  }
+  voiceEnabled = !voiceEnabled;
+  if(voiceEnabled){
+    const unlock = new SpeechSynthesisUtterance(" ");
+    unlock.volume = 0;
+    speechSynthesis.speak(unlock);
+    refreshVoices();
+    renderVoiceUI();
+  } else {
+    speechSynthesis.cancel();
+    setVoiceDot(false);
+    renderVoiceUI();
+  }
+}
+ 
+function getGestureBaseStyle(text){
+  let rate=0.92, pitch=1.0;
+  if(/WE WON|WE DID IT|AMAZING/.test(text)){ rate=1.08; pitch=1.25; }
+  else if(/HELLO|THANK|PERFECT/.test(text)){ rate=0.98; pitch=1.12; }
+  else if(/STOP|HELP|WAIT/.test(text)){ rate=1.03; pitch=1.18; }
+  else if(/\?/.test(text)){ rate=0.94; pitch=1.2; }
+  else if(/ANGRY|NO|DON'T/.test(text)){ rate=0.85; pitch=0.85; }
+  else if(/SORRY|PLEASE/.test(text)){ rate=0.85; pitch=0.95; }
+  return {rate,pitch};
+}
+ 
+function getVoiceStyle(styleKey){
+  const base = getGestureBaseStyle(styleKey);
+  const vp = faceState.confidence>0.25 ? faceVoiceProfile(faceState) : {pitchMod:1, rateMod:1};
+  return {
+    rate: clamp(base.rate * vp.rateMod, 0.6, 1.6),
+    pitch: clamp(base.pitch * vp.pitchMod, 0.6, 1.7)
+  };
+}
+ 
+// text = what is spoken (chosen language); styleKey = English phrase that drives rate/pitch (as before)
+function speak(text, styleKey){
+  if(!voiceEnabled || !text || text==="…") return;
+  try{ speechSynthesis.cancel(); }catch(e){}
+  const style = getVoiceStyle(styleKey || text);
+  const utter = new SpeechSynthesisUtterance(text);
+  const tag = voiceLangTag();
+  utter.lang = tag;
+  const v = pickVoice(tag);
+  if(v){ utter.voice = v; utter.lang = v.lang; }
+  utter.rate = style.rate;
+  utter.pitch = style.pitch;
+  utter.volume = 1;
+  utter.onstart = ()=>setVoiceDot(true);
+  utter.onend = ()=>setVoiceDot(false);
+  utter.onerror = ()=>setVoiceDot(false);
+  setTimeout(()=>{ try{ speechSynthesis.speak(utter); }catch(e){ console.error(e); } }, 60);
+}
+ 
+function setVoiceDot(speaking){
+  voiceDot.classList.toggle("speaking", speaking);
+  renderVoiceUI();
+}
+ 
+setInterval(()=>{
+  if(!voiceEnabled) return;
+  try{ if(speechSynthesis.paused) speechSynthesis.resume(); }catch(e){}
+}, 1200);
+ 
+document.addEventListener("visibilitychange", ()=>{
+  if(document.visibilityState === "visible"){
+    try{ speechSynthesis.resume(); }catch(e){}
+  } else {
+    stopCamera();
+  }
+});
+ 
+applyLang();
+buildDemo();
+ 
+function buildDemo(){
+  const words = Object.keys(GESTURES).map(k=>GESTURES[k]).filter((v,i,a)=>a.indexOf(v)===i);
+  const mq = document.getElementById("marquee");
+  if(mq){
+    const half = words.map(w=>`<span>${w.toUpperCase()}</span><b>◈</b>`).join("");
+    mq.innerHTML = half + half;
+  }
+  const dw = document.getElementById("demoWord");
+  const show = ["HELLO","THANK YOU","STOP","YES","TAKE MY PHOTO","WE WON!","CALL ME"];
+  let i = 0;
+  if(dw) setInterval(()=>{ i=(i+1)%show.length; dw.textContent = show[i]; }, 2000);
+}
+ 
+</script>
+</body>
+</html>
